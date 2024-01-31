@@ -768,6 +768,29 @@
     </PreferenceCategory>
 
     <PreferenceCategory
+        android:key="plugins"
+        android:title="Plugins">
+        <PreferenceScreen
+            android:icon="@drawable/ic_action_walking"
+            android:key="plugin_activity_recognition"
+            android:summary="Mode of transportation"
+            android:title="Activity recognition">
+        </PreferenceScreen>
+        <PreferenceScreen
+            android:icon="@drawable/ic_action_ambient_noise"
+            android:key="plugin_ambient_noise"
+            android:summary="Surrounding noisy or silent moments"
+            android:title="Ambient noise">
+        </PreferenceScreen>
+        <PreferenceScreen
+            android:icon="@drawable/ic_action_device_usage"
+            android:key="plugin_device_usage"
+            android:summary="Usage and non-usage sessions through screen locks and unlocks"
+            android:title="Device usage">
+        </PreferenceScreen>
+    </PreferenceCategory>
+
+    <PreferenceCategory
         android:key="study_actions"
         android:title="Study">
 

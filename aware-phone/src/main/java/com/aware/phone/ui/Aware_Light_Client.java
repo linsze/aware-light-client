@@ -160,6 +160,29 @@ public class Aware_Light_Client extends Aware_Activity {
     public boolean onPreferenceTreeClick(PreferenceScreen preferenceScreen, final Preference preference) {
         if (preference instanceof PreferenceScreen) {
             Dialog subpref = ((PreferenceScreen) preference).getDialog();
+
+            //HACK: Inflate plugin preferences into the current layout.
+            if (subpref == null) {
+                String prefKey = preference.getKey();
+                Class pluginClass = null;
+                switch (prefKey) {
+                    case "plugin_activity_recognition":
+                        pluginClass = com.aware.plugin.google.activity_recognition.Settings.class;
+                        break;
+                    case "plugin_ambient_noise":
+                        pluginClass = com.aware.plugin.ambient_noise.Settings.class;
+                        break;
+                    case "plugin_device_usage":
+                        pluginClass = com.aware.plugin.device_usage.Settings.class;
+                        break;
+                }
+                if (pluginClass != null) {
+                    Intent pluginPrefIntent = new Intent(this, pluginClass);
+                    startActivity(pluginPrefIntent);
+                }
+                return true;
+            }
+
             ViewGroup root = (ViewGroup) subpref.findViewById(android.R.id.content).getParent();
             Toolbar toolbar = new Toolbar(this);
             toolbar.setBackgroundColor(ContextCompat.getColor(preferenceScreen.getContext(), R.color.primary));

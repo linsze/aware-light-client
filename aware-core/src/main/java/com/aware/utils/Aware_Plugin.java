@@ -4,10 +4,13 @@ package com.aware.utils;
 import android.Manifest;
 import android.app.Service;
 import android.content.*;
+import android.content.pm.PackageManager;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.IBinder;
 import android.util.Log;
+
+import androidx.core.content.ContextCompat;
 import androidx.core.content.PermissionChecker;
 import com.aware.Aware;
 import com.aware.Aware_Preferences;
@@ -92,7 +95,9 @@ public class Aware_Plugin extends Service {
         PERMISSIONS_OK = true;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             for (String p : REQUIRED_PERMISSIONS) {
-                if (PermissionChecker.checkSelfPermission(this, p) != PermissionChecker.PERMISSION_GRANTED) {
+                //HACK: https://stackoverflow.com/questions/44813943/should-i-prefer-contextcompat-or-permissionchecker-for-permission-checking-on-an
+//                if (PermissionChecker.checkSelfPermission(this, p) != PermissionChecker.PERMISSION_GRANTED) {
+                if (ContextCompat.checkSelfPermission(this, p) != PackageManager.PERMISSION_GRANTED) {
                     PERMISSIONS_OK = false;
                     break;
                 }
@@ -131,9 +136,9 @@ public class Aware_Plugin extends Service {
         super.onDestroy();
 
         if (PERMISSIONS_OK) {
-            //Aware.debug(this, "destroyed: " + getClass().getName() + " package: " + getPackageName());
+           //Aware.debug(this, "destroyed: " + getClass().getName() + " package: " + getPackageName());
 
-            Aware.stopAWARE(getApplicationContext());
+           Aware.stopAWARE(getApplicationContext());
         }
 
         if (contextBroadcaster != null) unregisterReceiver(contextBroadcaster);

@@ -25,6 +25,7 @@
             <option value="$PROJECT_DIR$/com.aware.plugin.openweather/com.aware.plugin.openweather.lib" />
             <option value="$PROJECT_DIR$/com.aware.plugin.sensortag/com.aware.plugin.sensortag.lib" />
             <option value="$PROJECT_DIR$/com.aware.plugin.sentimental/com.aware.plugin.sentimental.lib" />
+            <option value="$PROJECT_DIR$/com.aware.plugin.studentlife.audio_final/com.aware.plugin.studentlife.audio_final.lib" />
           </set>
         </option>
       </GradleProjectSettings>
