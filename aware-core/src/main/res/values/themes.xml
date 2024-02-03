@@ -20,7 +20,9 @@
     </style>
 
     <style name="ListViewPreferences" parent="@android:style/Widget.ListView">
-        <item name="android:background">@android:color/background_light</item>
+        <item name="android:textAppearance">@style/TextAppearance.MaterialComponents.Body1</item>
+        <item name="android:divider">@color/lineSeparator</item>
+        <item name="android:dividerHeight">2dp</item>
     </style>
 
     <style name="Aware_Toolbar" parent="ThemeOverlay.AppCompat.ActionBar">
@@ -35,5 +37,9 @@
         <!-- Color of the Toolbar -->
         <item name="android:background">@color/primary</item>
         <item name="android:displayOptions">showHome|homeAsUp|showTitle</item>
+    </style>
+
+    <style name="PreferenceHeaderStyle" parent="android:style/Widget">
+
     </style>
 </resources>

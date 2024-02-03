@@ -45,7 +45,7 @@ public class JoinStudyDialog extends DialogFragment {
         final View dialogView = inflater.inflate(R.layout.dialog_join_study, null);
 
         builder.setView(dialogView);
-        builder.setTitle("Enter URL for study")
+        builder.setTitle("Configuration")
                 .setPositiveButton("Join", new DialogInterface.OnClickListener() {
                     public void onClick(DialogInterface dialog, int id) {
                         EditText etStudyConfigUrl = dialogView.findViewById(R.id.et_join_study_url);

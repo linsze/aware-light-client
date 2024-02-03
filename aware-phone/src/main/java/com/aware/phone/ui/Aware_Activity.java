@@ -37,17 +37,18 @@ public abstract class Aware_Activity extends AppCompatPreferenceActivity {
                 @Override
                 public boolean onNavigationItemSelected(@NonNull MenuItem item) {
                     switch (item.getItemId()) {
-                        case R.id.aware_sensors: //Sensors
-                            Intent sensors_ui = new Intent(getApplicationContext(), Aware_Light_Client.class);
-                            startActivity(sensors_ui);
+                        case R.id.home: //Home
+                            Intent mainUI = new Intent(getApplicationContext(), Aware_Light_Client.class);
+                            startActivity(mainUI);
                             break;
-                        case R.id.aware_plugins: //Plugins
-                            Intent pluginsManager = new Intent(getApplicationContext(), Plugins_Manager.class);
-                            startActivity(pluginsManager);
+                        case R.id.settings: //Settings
+                            // Intent pluginsManager = new Intent(getApplicationContext(), Plugins_Manager.class);
+                            Intent settingsUI = new Intent(getApplicationContext(), Settings_Page.class);
+                            startActivity(settingsUI);
                             break;
-                        case R.id.aware_stream: //Stream
-                            Intent stream_ui = new Intent(getApplicationContext(), Stream_UI.class);
-                            startActivity(stream_ui);
+                        case R.id.data: //Stream
+                            Intent dataUI = new Intent(getApplicationContext(), Stream_UI.class);
+                            startActivity(dataUI);
                             break;
                     }
                     return true;

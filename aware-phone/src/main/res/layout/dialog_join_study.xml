@@ -4,44 +4,44 @@
     android:layout_height="wrap_content">
 
     <TextView
-        android:layout_height="match_parent"
+        android:layout_height="wrap_content"
         android:layout_width="match_parent"
-        android:autofillHints="Enter URL to join study and password if required"
-        android:layout_marginTop="16dp"
-        android:layout_marginLeft="16dp"
-        android:layout_marginRight="16dp"
-        android:text=""
+        android:text="Enter the URL and password (if any) provided to you."
+        android:layout_marginVertical="20dp"
+        android:layout_marginHorizontal="20dp"
+        android:textAppearance="@style/TextAppearance.MaterialComponents.Caption"
         />
 
     <TextView
         android:layout_height="wrap_content"
         android:layout_width="wrap_content"
-        android:layout_marginLeft="16dp"
-        android:layout_marginRight="16dp"
+        android:layout_marginHorizontal="20dp"
         android:text="URL"
+        android:textAppearance="@style/TextAppearance.MaterialComponents.Subtitle1"
         />
 
     <EditText
         android:layout_height="wrap_content"
         android:layout_width="match_parent"
-        android:layout_marginLeft="16dp"
-        android:layout_marginRight="16dp"
+        android:layout_marginHorizontal="20dp"
         android:id="@+id/et_join_study_url"
+        android:textAppearance="@style/TextAppearance.MaterialComponents.Body2"
         />
 
     <TextView
         android:layout_height="wrap_content"
         android:layout_width="wrap_content"
-        android:layout_marginLeft="16dp"
-        android:layout_marginRight="16dp"
-        android:text="Password (empty if not required)"
+        android:layout_marginHorizontal="20dp"
+        android:layout_marginTop="10dp"
+        android:text="Password (optional)"
+        android:textAppearance="@style/TextAppearance.MaterialComponents.Subtitle1"
         />
 
     <EditText
         android:layout_height="wrap_content"
         android:layout_width="match_parent"
-        android:layout_marginLeft="16dp"
-        android:layout_marginRight="16dp"
+        android:layout_marginHorizontal="20dp"
         android:id="@+id/db_password"
+        android:textAppearance="@style/TextAppearance.MaterialComponents.Body2"
         />
 </LinearLayout>

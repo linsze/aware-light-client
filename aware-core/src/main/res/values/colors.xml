@@ -1,7 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="primary">#33B5E5</color>
-    <color name="primaryDark">#2196F3</color>
-    <color name="accent">#03A9F4</color>
-    <color name="lightGray">#ddd</color>
+    <color name="primary">#72a0c1</color>
+    <color name="primaryDark">#5d89ba</color>
+    <color name="accent">#4682b4</color>
+    <color name="sectionBackgroundColor">#F5F5F5</color>
+    <color name="settingEnabled">#0047ab</color>
+    <color name="settingDisabled">#d3d3d3</color>
+    <color name="lineSeparator">#b0c4de</color>
 </resources>

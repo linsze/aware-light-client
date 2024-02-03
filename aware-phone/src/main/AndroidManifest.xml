@@ -41,6 +41,15 @@
 <!--            </intent-filter>-->
         </activity>
         <activity
+            android:name=".ui.Settings_Page"
+            android:configChanges="orientation|keyboardHidden|screenSize"
+            android:exported="true"
+            android:icon="@drawable/ic_launcher_aware"
+            android:label="AWARE"
+            android:launchMode="singleTop"
+            android:theme="@style/Theme.Aware">
+        </activity>
+        <activity
             android:name=".ui.Stream_UI"
             android:configChanges="keyboardHidden|orientation|screenSize"
             android:icon="@mipmap/ic_launcher_stream"

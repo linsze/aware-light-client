@@ -3,20 +3,20 @@
     xmlns:app="http://schemas.android.com/apk/res-auto">
     <item
         android:enabled="true"
-        android:id="@+id/aware_sensors"
-        android:icon="@drawable/ic_action_aware_sensors"
-        android:title="Sensors"
+        android:id="@+id/home"
+        android:icon="@drawable/ic_home"
+        android:title="Home"
         app:showAsAction="always" />
     <item
         android:enabled="true"
-        android:id="@+id/aware_plugins"
-        android:icon="@drawable/ic_action_aware_plugins"
-        android:title="Plugins"
+        android:id="@+id/settings"
+        android:icon="@drawable/ic_settings"
+        android:title="Settings"
         app:showAsAction="always" />
     <item
         android:enabled="true"
-        android:id="@+id/aware_stream"
-        android:icon="@drawable/ic_action_aware_stream"
-        android:title="Stream"
+        android:id="@+id/data"
+        android:icon="@drawable/ic_data"
+        android:title="Data"
         app:showAsAction="always" />
 </menu>

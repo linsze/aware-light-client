@@ -6,11 +6,13 @@ import android.content.*;
 import android.content.pm.PackageInfo;
 import android.database.Cursor;
 import android.database.DatabaseUtils;
+import android.graphics.drawable.Drawable;
 import android.os.AsyncTask;
 import android.os.Bundle;
 import android.text.Editable;
 import android.text.Html;
 import android.text.TextWatcher;
+import android.text.method.ScrollingMovementMethod;
 import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -48,7 +50,9 @@ public class Aware_Join_Study extends Aware_Activity {
     private RecyclerView.LayoutManager mSensorsLayoutManager;
     private boolean pluginsInstalled;
     private Button btnAction, btnQuit;
-    private LinearLayout llPluginsRequired;
+    private LinearLayout llPluginsRequired, studySensorsInfo;
+
+    private TextView btnExpandStudyInfo;
 
     public static final String EXTRA_STUDY_URL = "study_url";
     public static final String EXTRA_STUDY_CONFIG = "study_config";
@@ -68,6 +72,10 @@ public class Aware_Join_Study extends Aware_Activity {
         super.onCreate(savedInstanceState);
 
         setContentView(R.layout.aware_join_study);
+
+        // Set study description to be scrollable
+        TextView scrollableDecsription = findViewById(R.id.study_description);
+        scrollableDecsription.setMovementMethod(new ScrollingMovementMethod());
 
         pluginsInstalled = false;
 
@@ -274,6 +282,22 @@ public class Aware_Join_Study extends Aware_Activity {
                             }
                         })
                         .show();
+            }
+        });
+
+        // Collapsible additional information related to sensors and plugins
+        btnExpandStudyInfo = findViewById(R.id.btn_expand_study_info);
+        studySensorsInfo = findViewById(R.id.study_sensor_info);
+        btnExpandStudyInfo.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                if (studySensorsInfo.getVisibility() == LinearLayout.VISIBLE) {
+                    studySensorsInfo.setVisibility(LinearLayout.GONE);
+                    btnExpandStudyInfo.setCompoundDrawablesWithIntrinsicBounds(null, null, getApplicationContext().getDrawable(android.R.drawable.arrow_down_float), null);
+                } else if (studySensorsInfo.getVisibility() == LinearLayout.GONE) {
+                    studySensorsInfo.setVisibility(LinearLayout.VISIBLE);
+                    btnExpandStudyInfo.setCompoundDrawablesWithIntrinsicBounds(null, null, getApplicationContext().getDrawable(android.R.drawable.arrow_up_float), null);
+                }
             }
         });
     }
@@ -673,7 +697,9 @@ public class Aware_Join_Study extends Aware_Activity {
 
         @Override
         public void onBindViewHolder(ViewHolder holder, final int position) {
-            holder.txtSensorName.setText(mDataset.get(position).sensorName);
+            String sensorName = mDataset.get(position).sensorName;
+            sensorName = sensorName.replace("_", " ");
+            holder.txtSensorName.setText(sensorName.substring(0, 1).toUpperCase() + sensorName.substring(1));
         }
 
         @Override
@@ -713,7 +739,10 @@ public class Aware_Join_Study extends Aware_Activity {
 
         @Override
         public void onBindViewHolder(ViewHolder holder, final int position) {
-            holder.txtPackageName.setText(mDataset.get(position).pluginName);
+            String pluginName = mDataset.get(position).pluginName;
+            pluginName = pluginName.substring(pluginName.indexOf("plugin")+7);
+            pluginName = pluginName.replaceAll("\\.", "_").replaceAll("_", " ");
+            holder.txtPackageName.setText(pluginName.substring(0, 1).toUpperCase() + pluginName.substring(1));
             holder.btnInstall.setOnClickListener(new View.OnClickListener() {
                 @Override
                 public void onClick(View v) {
