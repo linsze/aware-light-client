@@ -150,6 +150,9 @@ public class QuitStudyDialog extends DialogFragment {
                 @Override
                 public void onDismiss(DialogInterface dialogInterface) {
                     mActivity.finish();
+                    // Broadcast quit intent to reset all settings
+                    Intent quitIntent = new Intent(Aware.ACTION_QUIT_STUDY);
+                    getContext().sendBroadcast(quitIntent);
 
                     // Redirect the user to the main UI
                     Intent mainUI = new Intent(mActivity, Aware_Light_Client.class);

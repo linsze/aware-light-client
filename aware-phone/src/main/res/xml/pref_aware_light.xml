@@ -771,36 +771,26 @@
         android:key="plugins"
         android:title="Plugins">
         <PreferenceScreen
-            android:icon="@drawable/ic_action_walking"
-            android:key="plugin_activity_recognition"
+            android:icon="@drawable/ic_plugin_google_activity_recognition"
+            android:key="plugin_google_activity_recognition"
             android:summary="Mode of transportation"
             android:title="Activity recognition">
         </PreferenceScreen>
         <PreferenceScreen
-            android:icon="@drawable/ic_action_ambient_noise"
+            android:icon="@drawable/ic_plugin_ambient_noise"
             android:key="plugin_ambient_noise"
             android:summary="Surrounding noisy or silent moments"
             android:title="Ambient noise">
         </PreferenceScreen>
         <PreferenceScreen
-            android:icon="@drawable/ic_action_device_usage"
+            android:icon="@drawable/ic_plugin_device_usage"
             android:key="plugin_device_usage"
             android:summary="Usage and non-usage sessions through screen locks and unlocks"
             android:title="Device usage">
         </PreferenceScreen>
     </PreferenceCategory>
 
-    <PreferenceCategory
-        android:key="study_actions"
-        android:title="Study">
-
-        <com.aware.phone.ui.prefs.StudyInfoPref
-            android:key="study_info_pref" />
-        <com.aware.phone.ui.prefs.StudySyncPref
-            android:key="study_sync_pref" />
-        <com.aware.phone.ui.prefs.QuitStudyPref
-            android:key="study_quit_button" />
-
-    </PreferenceCategory>
+    <com.aware.phone.ui.prefs.QuitStudyPref
+        android:key="study_quit_button" />
 
 </PreferenceScreen>

@@ -10,6 +10,9 @@ import android.view.ViewGroup;
 import android.widget.BaseAdapter;
 import android.widget.ImageButton;
 import android.widget.ListView;
+import android.widget.TextView;
+import android.widget.Toast;
+
 import com.aware.Aware;
 import com.aware.phone.R;
 import com.aware.providers.Aware_Provider.Aware_Plugins;
@@ -46,12 +49,25 @@ public class Stream_UI extends Aware_Activity {
 
         setContentView(R.layout.stream_ui);
 
-        ImageButton add_to_stream = (ImageButton) findViewById(R.id.change_stream);
-        add_to_stream.setOnClickListener(new View.OnClickListener() {
+        // Set page title
+        TextView pageTitle = findViewById(R.id.page_title);
+        pageTitle.setText("Data");
+
+//        ImageButton add_to_stream = (ImageButton) findViewById(R.id.change_stream);
+//        add_to_stream.setOnClickListener(new View.OnClickListener() {
+//            @Override
+//            public void onClick(View view) {
+//                Intent plugin_manager = new Intent(getApplicationContext(), Plugins_Manager.class);
+//                startActivity(plugin_manager);
+//            }
+//        });
+        ImageButton syncData = (ImageButton) findViewById(R.id.fab_sync_data);
+        syncData.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
-                Intent plugin_manager = new Intent(getApplicationContext(), Plugins_Manager.class);
-                startActivity(plugin_manager);
+                Toast.makeText(getApplicationContext(), "Syncing data...", Toast.LENGTH_SHORT).show();
+                Intent sync = new Intent(Aware.ACTION_AWARE_SYNC_DATA);
+                getApplicationContext().sendBroadcast(sync);
             }
         });
 

@@ -73,9 +73,10 @@ public class Aware_Join_Study extends Aware_Activity {
 
         setContentView(R.layout.aware_join_study);
 
-        // Set study description to be scrollable
-        TextView scrollableDecsription = findViewById(R.id.study_description);
-        scrollableDecsription.setMovementMethod(new ScrollingMovementMethod());
+        //NOTE: Currently hidden from end users
+//        // Set study description to be scrollable
+//        TextView scrollableDecsription = findViewById(R.id.study_description);
+//        scrollableDecsription.setMovementMethod(new ScrollingMovementMethod());
 
         pluginsInstalled = false;
 
@@ -96,14 +97,15 @@ public class Aware_Join_Study extends Aware_Activity {
             }
         });
 
-        pluginsRecyclerView = (RecyclerView) findViewById(R.id.rv_plugins);
-        sensorsRecyclerView = (RecyclerView) findViewById(R.id.rv_sensors);
-        mPluginsLayoutManager = new LinearLayoutManager(this);
-        mSensorsLayoutManager = new LinearLayoutManager(this);
-        pluginsRecyclerView.setLayoutManager(mPluginsLayoutManager);
-        sensorsRecyclerView.setLayoutManager(mSensorsLayoutManager);
-
-        llPluginsRequired = (LinearLayout) findViewById(R.id.ll_plugins_required);
+        //NOTE: Currently hidden from end users
+//        pluginsRecyclerView = (RecyclerView) findViewById(R.id.rv_plugins);
+//        sensorsRecyclerView = (RecyclerView) findViewById(R.id.rv_sensors);
+//        mPluginsLayoutManager = new LinearLayoutManager(this);
+//        mSensorsLayoutManager = new LinearLayoutManager(this);
+//        pluginsRecyclerView.setLayoutManager(mPluginsLayoutManager);
+//        sensorsRecyclerView.setLayoutManager(mSensorsLayoutManager);
+//
+//        llPluginsRequired = (LinearLayout) findViewById(R.id.ll_plugins_required);
 
         study_url = getIntent().getStringExtra(EXTRA_STUDY_URL);
         String studyConfigStr = getIntent().getStringExtra(EXTRA_STUDY_CONFIG);
@@ -161,9 +163,10 @@ public class Aware_Join_Study extends Aware_Activity {
 
         if (!qry.isClosed()) qry.close();
 
-        if (study_configs != null) {
-            populateStudyInfo(study_configs);
-        }
+        //NOTE: Configuration details are currently hidden from end users
+//        if (study_configs != null) {
+//            populateStudyInfo(study_configs);
+//        }
 
         btnAction.setOnClickListener(new View.OnClickListener() {
             @Override
@@ -286,20 +289,21 @@ public class Aware_Join_Study extends Aware_Activity {
         });
 
         // Collapsible additional information related to sensors and plugins
-        btnExpandStudyInfo = findViewById(R.id.btn_expand_study_info);
-        studySensorsInfo = findViewById(R.id.study_sensor_info);
-        btnExpandStudyInfo.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                if (studySensorsInfo.getVisibility() == LinearLayout.VISIBLE) {
-                    studySensorsInfo.setVisibility(LinearLayout.GONE);
-                    btnExpandStudyInfo.setCompoundDrawablesWithIntrinsicBounds(null, null, getApplicationContext().getDrawable(android.R.drawable.arrow_down_float), null);
-                } else if (studySensorsInfo.getVisibility() == LinearLayout.GONE) {
-                    studySensorsInfo.setVisibility(LinearLayout.VISIBLE);
-                    btnExpandStudyInfo.setCompoundDrawablesWithIntrinsicBounds(null, null, getApplicationContext().getDrawable(android.R.drawable.arrow_up_float), null);
-                }
-            }
-        });
+        //NOTE: Currently hidden from end users
+//        btnExpandStudyInfo = findViewById(R.id.btn_expand_study_info);
+//        studySensorsInfo = findViewById(R.id.study_sensor_info);
+//        btnExpandStudyInfo.setOnClickListener(new View.OnClickListener() {
+//            @Override
+//            public void onClick(View v) {
+//                if (studySensorsInfo.getVisibility() == LinearLayout.VISIBLE) {
+//                    studySensorsInfo.setVisibility(LinearLayout.GONE);
+//                    btnExpandStudyInfo.setCompoundDrawablesWithIntrinsicBounds(null, null, getApplicationContext().getDrawable(android.R.drawable.arrow_down_float), null);
+//                } else if (studySensorsInfo.getVisibility() == LinearLayout.GONE) {
+//                    studySensorsInfo.setVisibility(LinearLayout.VISIBLE);
+//                    btnExpandStudyInfo.setCompoundDrawablesWithIntrinsicBounds(null, null, getApplicationContext().getDrawable(android.R.drawable.arrow_up_float), null);
+//                }
+//            }
+//        });
     }
 
     private class PopulateStudy extends AsyncTask<String, Void, JSONObject> {

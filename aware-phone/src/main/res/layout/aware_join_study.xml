@@ -23,7 +23,8 @@
                 android:layout_height="match_parent"
                 android:layout_width="match_parent"
                 android:text="Onboarding"
-                android:layout_marginVertical="5dp"
+                android:layout_marginTop="5dp"
+                android:layout_marginBottom="15dp"
                 android:textAppearance="@style/TextAppearance.MaterialComponents.Headline6"
             />
 
@@ -39,26 +40,27 @@
                 android:layout_height="wrap_content"
                 android:text="Description"
                 android:layout_marginVertical="5dp"
-                android:textAppearance="@style/TextAppearance.MaterialComponents.Caption"/>
+                android:textAppearance="@style/TextAppearance.AppCompat.Small"/>
 
-            <TextView
-                android:id="@+id/study_description"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_margin="10dp"
-                android:background="@drawable/scrollable_textview"
-                android:maxLines="8"
-                android:padding="10dp"
-                android:scrollbarAlwaysDrawVerticalTrack="true"
-                android:scrollbars="vertical"
-                android:text="@string/study_description"
-                android:textAppearance="@style/TextAppearance.MaterialComponents.Body2" />
+<!--            <TextView-->
+<!--                android:id="@+id/study_description"-->
+<!--                android:layout_width="wrap_content"-->
+<!--                android:layout_height="wrap_content"-->
+<!--                android:layout_margin="10dp"-->
+<!--                android:background="@drawable/scrollable_textview"-->
+<!--                android:maxLines="8"-->
+<!--                android:padding="10dp"-->
+<!--                android:scrollbarAlwaysDrawVerticalTrack="true"-->
+<!--                android:scrollbars="vertical"-->
+<!--                android:text="@string/study_description"-->
+<!--                android:textAppearance="@style/TextAppearance.MaterialComponents.Body2" />-->
 
             <TextView
                 android:id="@+id/researcher_heading"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginVertical="5dp"
+                android:layout_marginTop="20dp"
+                android:layout_marginBottom="5dp"
                 android:text="Primary research team contact:"
                 android:textAppearance="@style/TextAppearance.MaterialComponents.Subtitle1" />
             <TextView
@@ -66,12 +68,12 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:text="Researcher"
-                android:textAppearance="@style/TextAppearance.MaterialComponents.Caption" />
+                android:textAppearance="@style/TextAppearance.AppCompat.Small" />
             <TextView
                 android:id="@+id/onboarding_heading"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="15dp"
+                android:layout_marginTop="20dp"
                 android:text="Study identifier:"
                 android:textAppearance="@style/TextAppearance.MaterialComponents.Subtitle1" />
             <TextView
@@ -80,7 +82,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginEnd="5dp"
                 android:text="Enter an identifier code given to you. It helps us to map your device to data without storing your personal details."
-                android:textAppearance="@style/TextAppearance.MaterialComponents.Caption" />
+                android:textAppearance="@style/TextAppearance.AppCompat.Small" />
             <EditText
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -89,98 +91,98 @@
                     android:inputType="textEmailAddress" android:hint="Enter your study identifier here"
                     android:textAppearance="@style/TextAppearance.MaterialComponents.Body2"    />
 
-            <TextView
-                android:id="@+id/study_info_header"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="15dp"
-                android:text="Additional information:"
-                android:textAppearance="@style/TextAppearance.MaterialComponents.Subtitle1" />
-            <TextView
-                android:id="@+id/onboarding_heading"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginEnd="5dp"
-                android:text="Hardware sensors and plugin configuration. \nYou may update them at anytime during the study based on your preference."
-                android:textAppearance="@style/TextAppearance.MaterialComponents.Caption" />
-            <TextView
-                android:id="@+id/btn_expand_study_info"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="Configuration details"
-                android:textAppearance="@style/TextAppearance.MaterialComponents.Subtitle2"
-                android:drawableEnd="@android:drawable/arrow_down_float"
-                android:layout_marginTop="10dp"
-                android:padding="10dp"
-                android:layout_marginHorizontal="10dp"
-                android:background="@color/lineSeparator" />
+<!--            <TextView-->
+<!--                android:id="@+id/study_info_header"-->
+<!--                android:layout_width="match_parent"-->
+<!--                android:layout_height="wrap_content"-->
+<!--                android:layout_marginTop="15dp"-->
+<!--                android:text="Additional information:"-->
+<!--                android:textAppearance="@style/TextAppearance.MaterialComponents.Subtitle1" />-->
+<!--            <TextView-->
+<!--                android:id="@+id/onboarding_heading"-->
+<!--                android:layout_width="match_parent"-->
+<!--                android:layout_height="wrap_content"-->
+<!--                android:layout_marginEnd="5dp"-->
+<!--                android:text="Hardware sensors and plugin configuration. \nYou may update them at anytime during the study based on your preference."-->
+<!--                android:textAppearance="@style/TextAppearance.AppCompat.Small" />-->
+<!--            <TextView-->
+<!--                android:id="@+id/btn_expand_study_info"-->
+<!--                android:layout_width="match_parent"-->
+<!--                android:layout_height="wrap_content"-->
+<!--                android:text="Configuration details"-->
+<!--                android:textAppearance="@style/TextAppearance.MaterialComponents.Subtitle2"-->
+<!--                android:drawableEnd="@android:drawable/arrow_down_float"-->
+<!--                android:layout_marginTop="10dp"-->
+<!--                android:padding="10dp"-->
+<!--                android:layout_marginHorizontal="10dp"-->
+<!--                android:background="@color/lineSeparator" />-->
 
-            <LinearLayout
-                android:id="@+id/study_sensor_info"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginHorizontal="10dp"
-                android:layout_weight="1"
-                android:orientation="vertical"
-                android:background="@color/lineSeparator"
-                android:visibility="gone" >
-                <LinearLayout
-                    android:id="@+id/ll_sensors_required"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:layout_marginHorizontal="15dp"
-                    android:paddingVertical="5dp"
-                    android:paddingHorizontal="15dp"
-                    android:orientation="vertical"
-                    android:background="@drawable/rounded_container">
-                    <TextView
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="5dp"
-                        android:text="@string/sensors_required"
-                        android:textAppearance="@style/TextAppearance.MaterialComponents.Subtitle2" />
+<!--            <LinearLayout-->
+<!--                android:id="@+id/study_sensor_info"-->
+<!--                android:layout_width="match_parent"-->
+<!--                android:layout_height="wrap_content"-->
+<!--                android:layout_marginHorizontal="10dp"-->
+<!--                android:layout_weight="1"-->
+<!--                android:orientation="vertical"-->
+<!--                android:background="@color/lineSeparator"-->
+<!--                android:visibility="gone" >-->
+<!--                <LinearLayout-->
+<!--                    android:id="@+id/ll_sensors_required"-->
+<!--                    android:layout_width="match_parent"-->
+<!--                    android:layout_height="wrap_content"-->
+<!--                    android:layout_weight="1"-->
+<!--                    android:layout_marginHorizontal="15dp"-->
+<!--                    android:paddingVertical="5dp"-->
+<!--                    android:paddingHorizontal="15dp"-->
+<!--                    android:orientation="vertical"-->
+<!--                    android:background="@drawable/rounded_container">-->
+<!--                    <TextView-->
+<!--                        android:layout_width="match_parent"-->
+<!--                        android:layout_height="wrap_content"-->
+<!--                        android:layout_marginTop="5dp"-->
+<!--                        android:text="@string/sensors_required"-->
+<!--                        android:textAppearance="@style/TextAppearance.MaterialComponents.Subtitle2" />-->
 
-                    <androidx.recyclerview.widget.RecyclerView
-                        android:id="@+id/rv_sensors"
-                        android:layout_width="match_parent"
-                        android:layout_height="match_parent"
-                        android:layout_gravity="center_vertical"
-                        android:padding="5dp">
-                        <!--                    android:scrollbars="vertical">-->
+<!--                    <androidx.recyclerview.widget.RecyclerView-->
+<!--                        android:id="@+id/rv_sensors"-->
+<!--                        android:layout_width="match_parent"-->
+<!--                        android:layout_height="match_parent"-->
+<!--                        android:layout_gravity="center_vertical"-->
+<!--                        android:padding="5dp">-->
+<!--                        &lt;!&ndash;                    android:scrollbars="vertical">&ndash;&gt;-->
 
-                    </androidx.recyclerview.widget.RecyclerView>
-                </LinearLayout>
+<!--                    </androidx.recyclerview.widget.RecyclerView>-->
+<!--                </LinearLayout>-->
 
-                <LinearLayout
-                    android:id="@+id/ll_plugins_required"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:layout_marginVertical="10dp"
-                    android:layout_marginHorizontal="15dp"
-                    android:paddingVertical="10dp"
-                    android:paddingHorizontal="15dp"
-                    android:orientation="vertical"
-                    android:background="@drawable/rounded_container">
+<!--                <LinearLayout-->
+<!--                    android:id="@+id/ll_plugins_required"-->
+<!--                    android:layout_width="match_parent"-->
+<!--                    android:layout_height="wrap_content"-->
+<!--                    android:layout_weight="1"-->
+<!--                    android:layout_marginVertical="10dp"-->
+<!--                    android:layout_marginHorizontal="15dp"-->
+<!--                    android:paddingVertical="10dp"-->
+<!--                    android:paddingHorizontal="15dp"-->
+<!--                    android:orientation="vertical"-->
+<!--                    android:background="@drawable/rounded_container">-->
 
-                    <TextView
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="5dp"
-                        android:text="@string/plugins_required"
-                        android:textAppearance="@style/TextAppearance.MaterialComponents.Subtitle2" />
+<!--                    <TextView-->
+<!--                        android:layout_width="match_parent"-->
+<!--                        android:layout_height="wrap_content"-->
+<!--                        android:layout_marginTop="5dp"-->
+<!--                        android:text="@string/plugins_required"-->
+<!--                        android:textAppearance="@style/TextAppearance.MaterialComponents.Subtitle2" />-->
 
-                    <androidx.recyclerview.widget.RecyclerView
-                        android:id="@+id/rv_plugins"
-                        android:layout_width="match_parent"
-                        android:layout_height="match_parent"
-                        android:layout_gravity="center_vertical"
-                        android:padding="5dp">
-                        <!--                    android:scrollbars="vertical">-->
-                    </androidx.recyclerview.widget.RecyclerView>
-                </LinearLayout>
-            </LinearLayout>
+<!--                    <androidx.recyclerview.widget.RecyclerView-->
+<!--                        android:id="@+id/rv_plugins"-->
+<!--                        android:layout_width="match_parent"-->
+<!--                        android:layout_height="match_parent"-->
+<!--                        android:layout_gravity="center_vertical"-->
+<!--                        android:padding="5dp">-->
+<!--                        &lt;!&ndash;                    android:scrollbars="vertical">&ndash;&gt;-->
+<!--                    </androidx.recyclerview.widget.RecyclerView>-->
+<!--                </LinearLayout>-->
+<!--            </LinearLayout>-->
         </LinearLayout>
     </ScrollView>
 
@@ -196,9 +198,8 @@
             android:layout_height="wrap_content"
             android:layout_gravity="start"
             android:layout_weight="0.09"
-            android:layout_marginRight="5dp"
-            android:layout_marginEnd="5dp"
-            android:background="@android:color/holo_red_light"
+            android:layout_marginHorizontal="10dp"
+            android:background="@color/important"
             android:text="Quit study"
             android:textColor="@android:color/white" />
 
@@ -207,12 +208,12 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_gravity="end"
-            android:layout_margin="0dp"
+            android:layout_marginHorizontal="20dp"
             android:layout_weight="1"
             android:background="@color/primaryDark"
             android:enabled="true"
             android:padding="0dp"
-            android:text="@string/consent"
+            android:text="@string/sign_up"
             android:textColor="@android:color/white" />
     </LinearLayout>
 

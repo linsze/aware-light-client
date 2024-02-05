@@ -7,4 +7,5 @@
     <color name="settingEnabled">#0047ab</color>
     <color name="settingDisabled">#d3d3d3</color>
     <color name="lineSeparator">#b0c4de</color>
+    <color name="important">#bf4f51</color>
 </resources>

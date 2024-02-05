@@ -1,24 +1,115 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:orientation="vertical" android:layout_width="match_parent"
-    android:layout_height="match_parent" android:padding="15dp">
+    android:layout_height="match_parent" android:paddingHorizontal="15dp">
 
-    <TextView
-        android:id="@+id/study_name"
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="Study Name"
-        android:textSize="18dp"
-        android:textStyle="bold"/>
+        android:orientation="vertical"
+        android:paddingHorizontal="10dp"
+        android:paddingVertical="15dp"
+        android:background="@color/sectionBackgroundColor" >
 
-    <TextView
-        android:id="@+id/study_description"
+        <TextView
+            android:id="@+id/study_name"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Study"
+            android:textAppearance="@style/TextAppearance.MaterialComponents.Subtitle1"
+            android:textSize="18sp" />
+
+        <TextView
+            android:id="@+id/study_description"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginVertical="5dp"
+            android:text="test"
+            android:textAppearance="@style/TextAppearance.AppCompat.Small" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:text="Aim"
+            android:textAppearance="@style/TextAppearance.MaterialComponents.Subtitle1" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginVertical="5dp"
+            android:textAppearance="@style/TextAppearance.AppCompat.Small"
+            android:text="Investigate how passive personal sensing helps understand an individual's mental well-being." />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:text="Primary research team contact"
+            android:textAppearance="@style/TextAppearance.MaterialComponents.Subtitle1" />
+        <TextView
+            android:id="@+id/study_contact"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginVertical="5dp"
+            android:text="Researcher"
+            android:textAppearance="@style/TextAppearance.AppCompat.Small" />
+
+    </LinearLayout>
+
+    <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="wrap_content" />
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:layout_marginVertical="10dp"
+        android:paddingHorizontal="10dp"
+        android:paddingVertical="15dp"
+        android:background="@color/sectionBackgroundColor" >
 
-    <TextView
-        android:id="@+id/study_contact"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content" />
-
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Navigating the app"
+            android:textAppearance="@style/TextAppearance.MaterialComponents.Subtitle1"
+            android:textSize="18sp" />
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:text="What it does"
+            android:textAppearance="@style/TextAppearance.MaterialComponents.Subtitle1" />
+        <TextView
+            android:id="@+id/app_features_bullet"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="5dp"
+            android:text="Bullet item"
+            android:textAppearance="@style/TextAppearance.AppCompat.Small" />
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:text="What you can do"
+            android:textAppearance="@style/TextAppearance.MaterialComponents.Subtitle1" />
+        <TextView
+            android:id="@+id/app_user_control_bullet"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="5dp"
+            android:text="Bullet item"
+            android:textAppearance="@style/TextAppearance.AppCompat.Small" />
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:text="Upcoming"
+            android:textAppearance="@style/TextAppearance.MaterialComponents.Subtitle1" />
+        <TextView
+            android:id="@+id/app_future_features_bullet"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="5dp"
+            android:text="Bullet item"
+            android:textAppearance="@style/TextAppearance.AppCompat.Small" />
+    </LinearLayout>
 </LinearLayout>

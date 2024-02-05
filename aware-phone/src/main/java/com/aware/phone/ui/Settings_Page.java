@@ -3,9 +3,18 @@ package com.aware.phone.ui;
 import static com.aware.Aware.TAG;
 
 import android.app.Dialog;
+import android.content.BroadcastReceiver;
+import android.content.ComponentName;
+import android.content.ContentValues;
 import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
+import android.content.IntentFilter;
+import android.content.pm.PackageInfo;
+import android.content.pm.PackageManager;
+import android.content.pm.PackageManager.NameNotFoundException;
+import android.content.pm.ServiceInfo;
+import android.database.Cursor;
 import android.graphics.PorterDuff;
 import android.graphics.PorterDuffColorFilter;
 import android.graphics.drawable.Drawable;
@@ -20,7 +29,9 @@ import android.preference.PreferenceCategory;
 import android.preference.PreferenceScreen;
 import android.util.Log;
 import android.view.ViewGroup;
+
 import android.widget.ListAdapter;
+import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.appcompat.widget.Toolbar;
@@ -29,6 +40,9 @@ import androidx.core.content.ContextCompat;
 import com.aware.Aware;
 import com.aware.Aware_Preferences;
 import com.aware.phone.R;
+import com.aware.providers.Aware_Provider;
+import com.aware.utils.Aware_Plugin;
+import com.aware.utils.PluginsManager;
 
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -45,6 +59,8 @@ public class Settings_Page extends Aware_Activity{
 
     private static SharedPreferences prefs;
 
+    private PluginsListener pluginsListener;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -52,6 +68,26 @@ public class Settings_Page extends Aware_Activity{
 
         setContentView(R.layout.aware_light_main);
         addPreferencesFromResource(R.xml.pref_aware_light);
+
+        // Set page title
+        TextView pageTitle = findViewById(R.id.page_title);
+        pageTitle.setText("Settings");
+
+        // Monitors for external changes in plugin's states and refresh the UI
+        pluginsListener = new PluginsListener();
+
+        IntentFilter filter = new IntentFilter();
+        filter.addAction(Aware.ACTION_AWARE_UPDATE_PLUGINS_INFO);
+        registerReceiver(pluginsListener, filter);
+    }
+
+    public class PluginsListener extends BroadcastReceiver {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            if (intent.getAction().equals(Aware.ACTION_AWARE_UPDATE_PLUGINS_INFO)) {
+                updatePluginIndicators();
+            }
+        }
     }
 
     @Override
@@ -62,21 +98,28 @@ public class Settings_Page extends Aware_Activity{
             //HACK: Inflate plugin preferences into the current layout.
             if (subpref == null) {
                 String prefKey = preference.getKey();
-                Class pluginClass = null;
+                String packageName = null;
+
                 switch (prefKey) {
-                    case "plugin_activity_recognition":
-                        pluginClass = com.aware.plugin.google.activity_recognition.Settings.class;
+                    case "plugin_google_activity_recognition":
+                        packageName = "com.aware.plugin.google.activity_recognition";
                         break;
                     case "plugin_ambient_noise":
-                        pluginClass = com.aware.plugin.ambient_noise.Settings.class;
+                        packageName = "com.aware.plugin.ambient_noise";
                         break;
                     case "plugin_device_usage":
-                        pluginClass = com.aware.plugin.device_usage.Settings.class;
+                        packageName = "com.aware.plugin.device_usage";
                         break;
                 }
-                if (pluginClass != null) {
-                    Intent pluginPrefIntent = new Intent(this, pluginClass);
-                    startActivity(pluginPrefIntent);
+                if (packageName != null) {
+                    String bundledPackage;
+                    PackageInfo pkg = PluginsManager.isInstalled(getApplicationContext(), packageName);
+                    if (pkg != null && pkg.versionName.equals("bundled")) {
+                        bundledPackage = getApplicationContext().getPackageName();
+                        Intent open_settings = new Intent();
+                        open_settings.setComponent(new ComponentName(((bundledPackage.length() > 0) ? bundledPackage : packageName), packageName + ".Settings"));
+                        startActivity(open_settings);
+                    }
                 }
                 return true;
             }
@@ -157,13 +200,13 @@ public class Settings_Page extends Aware_Activity{
                         int colorId = pluginIsActive ? R.color.settingEnabled : R.color.settingDisabled;
                         category_icon.setColorFilter(new PorterDuffColorFilter(ContextCompat.getColor(getApplicationContext(), colorId), PorterDuff.Mode.SRC_IN));
                         pluginPref.setIcon(category_icon);
+                        onContentChanged();
                     }
                 } catch (NoSuchFieldException | IllegalAccessException e) {
                     e.printStackTrace();
                 }
 
             }
-            // onContentChanged();
         } catch (JSONException e) {
             e.printStackTrace();
         }
@@ -233,12 +276,20 @@ public class Settings_Page extends Aware_Activity{
                 findPreference(Aware_Preferences.FOREGROUND_PRIORITY),
                 findPreference(Aware_Preferences.STATUS_TOUCH)
         );
+        updatePluginIndicators();
     }
 
     @Override
     protected void onPause() {
         super.onPause();
         if (prefs != null) prefs.unregisterOnSharedPreferenceChangeListener(this);
+    }
+
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        unregisterReceiver(pluginsListener);
     }
 
     private class SettingsSync extends AsyncTask<Preference, Preference, Void> {
@@ -359,7 +410,6 @@ public class Settings_Page extends Aware_Activity{
                     rootSensorPref.removePreference(parent);
                 }
             }
-            updatePluginIndicators();
         }
     }
 }

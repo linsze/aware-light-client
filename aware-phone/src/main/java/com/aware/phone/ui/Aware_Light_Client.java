@@ -32,8 +32,11 @@ import android.preference.PreferenceManager;
 import android.preference.PreferenceScreen;
 import android.provider.Settings;
 import android.util.Log;
+import android.view.View;
 import android.view.ViewGroup;
 import android.widget.ListAdapter;
+import android.widget.ListView;
+import android.widget.TextView;
 import android.widget.Toast;
 
 import com.aware.Applications;
@@ -41,6 +44,7 @@ import com.aware.Aware;
 import com.aware.Aware_Preferences;
 import com.aware.phone.R;
 import com.aware.ui.PermissionsHandler;
+import com.google.android.material.bottomnavigation.BottomNavigationMenu;
 
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -88,10 +92,24 @@ public class Aware_Light_Client extends Aware_Activity {
 
         if (Aware.isStudy(getApplicationContext())) {
             addPreferencesFromResource(R.xml.pref_home);
+            // Set page title
+            TextView pageTitle = findViewById(R.id.page_title);
+            pageTitle.setText("Home");
+            // Remove listview item separator and adjust top margin specifically for the current layout
+            ListView overallListView = getListView();
+            overallListView.setDivider(null);
+            ViewGroup.MarginLayoutParams layoutParams = (ViewGroup.MarginLayoutParams) overallListView
+                    .getLayoutParams();
+            layoutParams.setMargins(layoutParams.leftMargin, 35, layoutParams.rightMargin, layoutParams.bottomMargin);
         } else {
             addPreferencesFromResource(R.xml.pref_aware_device);
+            TextView pageTitle = findViewById(R.id.page_title);
+            pageTitle.setText("");
+            View bottomNavigationMenu = findViewById(R.id.aware_bottombar);
+            bottomNavigationMenu.setVisibility(View.GONE);
         }
 //        hideUnusedPreferences();
+
 
         // Initialize and check optional sensors and required permissions before starting AWARE service
         optionalSensors.put(Aware_Preferences.STATUS_ACCELEROMETER, Sensor.TYPE_ACCELEROMETER);

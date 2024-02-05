@@ -45,14 +45,6 @@ public class StudySyncPref extends Preference {
                 getContext().sendBroadcast(sync);
             }
         });
-        view.findViewById(R.id.btn_sync_study_data).setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                Toast.makeText(getContext(), "Syncing data...", Toast.LENGTH_SHORT).show();
-                Intent sync = new Intent(Aware.ACTION_AWARE_SYNC_DATA);
-                getContext().sendBroadcast(sync);
-            }
-        });
 
         return view;
     }
