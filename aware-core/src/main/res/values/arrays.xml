@@ -46,4 +46,52 @@
         <item>Fast (20ms)</item>
         <item>Fastest (0ms)</item>
     </string-array>
+    <string-array name="sampling_frequency_readable">
+        <item>Every 1 minute</item>
+        <item>Every 3 minutes</item>
+        <item>Every 5 minutes</item>
+        <item>Every 10 minutes</item>
+        <item>Every 30 minutes</item>
+        <item>Every 1 hour</item>
+    </string-array>
+    <string-array name="sampling_frequency_values_minute">
+        <item>1</item>
+        <item>3</item>
+        <item>5</item>
+        <item>10</item>
+        <item>30</item>
+        <item>60</item>
+    </string-array>
+    <string-array name="sampling_frequency_values_second">
+        <item>60</item>
+        <item>180</item>
+        <item>300</item>
+        <item>600</item>
+        <item>1800</item>
+        <item>3600</item>
+    </string-array>
+    <string-array name="background_process_sampling_frequency_readable">
+        <item>Disabled</item>
+        <item>Every 30 seconds</item>
+        <item>Every 1 minute</item>
+        <item>Every 3 minutes</item>
+        <item>Every 5 minutes</item>
+        <item>Every 10 minutes</item>
+    </string-array>
+    <string-array name="location_sampling_frequency_readable">
+        <item>Always on</item>
+        <item>Every 30 seconds</item>
+        <item>Every 1 minute</item>
+        <item>Every 3 minutes</item>
+        <item>Every 5 minutes</item>
+        <item>Every 10 minutes</item>
+    </string-array>
+    <string-array name="background_process_sampling_frequency_values_second">
+        <item>0</item>
+        <item>30</item>
+        <item>60</item>
+        <item>180</item>
+        <item>300</item>
+        <item>600</item>
+    </string-array>
 </resources>

@@ -7,8 +7,7 @@
     android:layout_height="wrap_content"
     android:layout_alignParentBottom="true"
     android:layout_gravity="start|bottom"
-    app:itemBackground="@color/primary"
+    app:itemBackground="@color/menu_item"
     app:itemIconTint="@android:color/white"
     app:itemTextColor="@android:color/white"
     app:menu="@menu/aware_bottomnav" />
-

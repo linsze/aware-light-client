@@ -1,0 +1,265 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--Users' version of preference screen for simple customizable configuration.
+Refer to pref_aware_light.xml for all other components.
+-->
+<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android"
+    android:key="pref_aware_light"
+    android:title="@string/app_name">
+    <PreferenceCategory
+        android:key="sensors"
+        android:title="Sensing Configuration">
+        <PreferenceScreen
+            android:icon="@drawable/ic_plugin_google_activity_recognition"
+            android:key="plugin_google_activity_recognition"
+            android:summary="Mode of transportation"
+            android:title="Activity recognition">
+        </PreferenceScreen>
+        <PreferenceScreen
+            android:icon="@drawable/ic_action_accelerometer"
+            android:key="accelerometer"
+            android:summary="Raw acceleration, including the force of gravity"
+            android:title="Accelerometer">
+            <CheckBoxPreference
+                android:defaultValue="false"
+                android:key="status_accelerometer"
+                android:persistent="true"
+                android:title="Enabled"
+                android:summary="Acceleration in the X, Y, and Z axes relative to the phone's orientation" />
+            <ListPreference
+                android:defaultValue="200000"
+                android:entries="@array/frequency_readable"
+                android:entryValues="@array/frequency_values"
+                android:key="frequency_accelerometer"
+                android:persistent="true"
+                android:dependency="status_accelerometer"
+                android:summary="Default: every 200 microseconds"
+                android:title="Sampling rate" />
+            <CheckBoxPreference
+                android:defaultValue="false"
+                android:key="status_significant_motion"
+                android:persistent="true"
+                android:dependency="status_accelerometer"
+                android:summary="Log motion events. Saves battery life, stops motion sensors logs if idle!"
+                android:title="Significant motion only" />
+        </PreferenceScreen>
+        <PreferenceScreen
+            android:icon="@drawable/ic_action_applications"
+            android:key="applications"
+            android:summary="Application usage and interactions"
+            android:title="Applications">
+            <CheckBoxPreference
+                android:defaultValue="false"
+                android:key="status_applications"
+                android:persistent="true"
+                android:title="Running applications"
+                android:summary="Name of in-use applications" />
+            <ListPreference
+                android:defaultValue="0"
+                android:entries="@array/background_process_sampling_frequency_readable"
+                android:entryValues="@array/background_process_sampling_frequency_values_second"
+                android:key="frequency_applications"
+                android:persistent="true"
+                android:dependency="status_applications"
+                android:summary="Default: every 30 seconds (0 if disabled)"
+                android:title="Sampling frequency of background statuses" />
+            <CheckBoxPreference
+                android:defaultValue="false"
+                android:dependency="status_applications"
+                android:key="status_notifications"
+                android:persistent="true"
+                android:summary="Header of notifications sent by applications, without text content"
+                android:title="Notifications" />
+        </PreferenceScreen>
+        <PreferenceScreen
+            android:icon="@drawable/ic_action_light"
+            android:key="light"
+            android:summary="Surrounding illumination"
+            android:title="Ambient light">
+            <CheckBoxPreference
+                android:defaultValue="false"
+                android:key="status_light"
+                android:persistent="true"
+                android:title="Enabled"
+                android:summary="Magnitude of ambient luminance" />
+            <ListPreference
+                android:defaultValue="20000"
+                android:entries="@array/frequency_readable"
+                android:entryValues="@array/frequency_values"
+                android:key="frequency_light"
+                android:persistent="true"
+                android:summary="Default: every 20 milliseconds"
+                android:title="Sampling rate" />
+        </PreferenceScreen>
+        <PreferenceScreen
+            android:icon="@drawable/ic_plugin_ambient_noise"
+            android:key="plugin_ambient_noise"
+            android:summary="Surrounding noisy or silent moments"
+            android:title="Ambient noise">
+        </PreferenceScreen>
+        <PreferenceScreen
+            android:icon="@drawable/ic_action_bluetooth"
+            android:key="bluetooth"
+            android:summary="Nearby Bluetooth-enabled and visible devices"
+            android:title="Bluetooth">
+            <CheckBoxPreference
+                android:defaultValue="false"
+                android:key="status_bluetooth"
+                android:persistent="true"
+                android:title="Enabled"
+                android:summary="Name and MAC address of nearby devices" />
+            <ListPreference
+                android:defaultValue="60"
+                android:key="frequency_bluetooth"
+                android:persistent="true"
+                android:dependency="status_bluetooth"
+                android:entries="@array/sampling_frequency_readable"
+                android:entryValues="@array/sampling_frequency_values_second"
+                android:summary="Default: every 1 minute"
+                android:title="Sampling frequency" />
+        </PreferenceScreen>
+        <PreferenceScreen
+            android:icon="@drawable/ic_action_communication"
+            android:key="communication"
+            android:summary="Calls and messages"
+            android:title="Communication">
+            <CheckBoxPreference
+                android:defaultValue="false"
+                android:key="status_calls"
+                android:persistent="true"
+                android:summary="Duration of calls performed, received, or missed, without call content"
+                android:title="Call events" />
+            <CheckBoxPreference
+                android:defaultValue="false"
+                android:key="status_messages"
+                android:persistent="true"
+                android:summary="Sent or received SMS/MMS, without message content"
+                android:title="Message events" />
+        </PreferenceScreen>
+        <PreferenceScreen
+            android:icon="@drawable/ic_action_locations"
+            android:key="locations"
+            android:summary="Estimated based on GPS and/or network"
+            android:title="Locations">
+            <CheckBoxPreference
+                android:defaultValue="false"
+                android:key="status_location_gps"
+                android:persistent="true"
+                android:summary="Estimated location latitude, longitude, altitude etc."
+                android:title="GPS tracking" />
+            <ListPreference
+                android:defaultValue="180"
+                android:key="frequency_location_gps"
+                android:persistent="true"
+                android:dependency="status_location_gps"
+                android:entries="@array/location_sampling_frequency_readable"
+                android:entryValues="@array/sampling_frequency_values_second"
+                android:summary="Default: every 3 minutes"
+                android:title="Sampling frequency" />
+            <CheckBoxPreference
+                android:defaultValue="false"
+                android:key="status_location_network"
+                android:persistent="true"
+                android:summary="Location tracking via cell tower and Wi-Fi"
+                android:title="Network tracking" />
+            <ListPreference
+                android:defaultValue="300"
+                android:key="frequency_location_network"
+                android:persistent="true"
+                android:dependency="status_location_network"
+                android:entries="@array/location_sampling_frequency_readable"
+                android:entryValues="@array/sampling_frequency_values_second"
+                android:summary="Default: every 5 minutes"
+                android:title="Sampling frequency" />
+        </PreferenceScreen>
+        <PreferenceScreen
+            android:icon="@drawable/ic_plugin_device_usage"
+            android:key="plugin_device_usage"
+            android:summary="Usage and non-usage based on screen lock/unlock"
+            android:title="Phone usage duration">
+        </PreferenceScreen>
+        <PreferenceScreen
+            android:icon="@drawable/ic_action_screen"
+            android:key="screen"
+            android:summary="Screen states, interactions, and content"
+            android:title="Screen events">
+            <CheckBoxPreference
+                android:defaultValue="false"
+                android:key="status_screen"
+                android:persistent="true"
+                android:summary="Screen on, off, locked, or unlocked"
+                android:title="Screen states" />
+            <CheckBoxPreference
+                android:defaultValue="false"
+                android:key="status_touch"
+                android:persistent="true"
+                android:summary="Clicks, long clicks, or scroll up/down events"
+                android:title="Screen interactions" />
+            <CheckBoxPreference
+                android:defaultValue="false"
+                android:key="status_keyboard"
+                android:persistent="true"
+                android:summary="Characters typed on the keyboard"
+                android:title="Keyboard inputs" />
+            <CheckBoxPreference
+                android:defaultValue="false"
+                android:key="mask_keyboard"
+                android:persistent="true"
+                android:summary="Swaps typed alphanumeric characters by A, a, and 1"
+                android:title="Masked keyboard inputs" />
+            <CheckBoxPreference
+                android:defaultValue="false"
+                android:key="status_screentext"
+                android:persistent="true"
+                android:summary="Texts on screen (except passwords) during interactions"
+                android:title="Interacted text content" />
+        </PreferenceScreen>
+        <PreferenceScreen
+            android:icon="@drawable/ic_action_esm"
+            android:key="esm"
+            android:summary="Receive prompts to assess current behaviors and experiences"
+            android:title="Self assessments">
+            <CheckBoxPreference
+                android:defaultValue="false"
+                android:key="status_esm"
+                android:persistent="true"
+                android:summary="Allow short retrospective prompts at various times of the day"
+                android:title="Enabled" />
+        </PreferenceScreen>
+        <PreferenceScreen
+            android:icon="@drawable/ic_action_wifi"
+            android:key="wifi"
+            android:summary="Surrounding Wi-Fi visible devices"
+            android:title="Wi-Fi">
+            <CheckBoxPreference
+                android:defaultValue="false"
+                android:key="status_wifi"
+                android:persistent="true"
+                android:title="Enabled"
+                android:summary="Name, MAC address, and band frequency of nearby devices" />
+            <ListPreference
+                android:defaultValue="60"
+                android:key="frequency_wifi"
+                android:persistent="true"
+                android:dependency="status_wifi"
+                android:entries="@array/sampling_frequency_readable"
+                android:entryValues="@array/sampling_frequency_values_second"
+                android:summary="Default: every 60 seconds"
+                android:title="Sampling frequency" />
+        </PreferenceScreen>
+    </PreferenceCategory>
+    <PreferenceCategory
+        android:key="device_ids"
+        android:title="Device">
+        <EditTextPreference
+            android:key="device_id"
+            android:persistent="true"
+            android:selectable="false"
+            android:summary="%s"
+            android:title="AWARE Device ID" />
+        <EditTextPreference
+            android:key="device_label"
+            android:persistent="true"
+            android:summary="%s"
+            android:title="Device label" />
+    </PreferenceCategory>
+</PreferenceScreen>

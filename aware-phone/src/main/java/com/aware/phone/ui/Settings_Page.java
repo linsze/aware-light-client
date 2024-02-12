@@ -31,6 +31,7 @@ import android.util.Log;
 import android.view.ViewGroup;
 
 import android.widget.ListAdapter;
+import android.widget.ListView;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -67,11 +68,8 @@ public class Settings_Page extends Aware_Activity{
         prefs = getSharedPreferences("com.aware.phone", Context.MODE_PRIVATE);
 
         setContentView(R.layout.aware_light_main);
-        addPreferencesFromResource(R.xml.pref_aware_light);
-
-        // Set page title
-        TextView pageTitle = findViewById(R.id.page_title);
-        pageTitle.setText("Settings");
+        // addPreferencesFromResource(R.xml.pref_aware_light);
+        addPreferencesFromResource(R.xml.pref_sensors_plugins);
 
         // Monitors for external changes in plugin's states and refresh the UI
         pluginsListener = new PluginsListener();

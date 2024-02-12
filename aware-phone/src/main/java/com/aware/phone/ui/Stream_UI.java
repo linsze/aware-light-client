@@ -49,10 +49,6 @@ public class Stream_UI extends Aware_Activity {
 
         setContentView(R.layout.stream_ui);
 
-        // Set page title
-        TextView pageTitle = findViewById(R.id.page_title);
-        pageTitle.setText("Data");
-
 //        ImageButton add_to_stream = (ImageButton) findViewById(R.id.change_stream);
 //        add_to_stream.setOnClickListener(new View.OnClickListener() {
 //            @Override

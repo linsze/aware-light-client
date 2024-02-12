@@ -12,7 +12,6 @@
         android:text="@string/quit_study"
         android:textColor="@android:color/white"
         android:paddingHorizontal="50dp"
-        android:layout_marginTop="20dp"
-        android:layout_marginBottom="10dp"/>
+        android:layout_marginBottom="30dp"/>
 
 </LinearLayout>

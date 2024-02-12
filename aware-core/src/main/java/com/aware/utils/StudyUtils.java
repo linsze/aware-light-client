@@ -500,6 +500,7 @@ public class StudyUtils extends IntentService {
                             }
                         });
                     }
+                    study.close();
                     return;
                 }
                 if (jsonEquals(localConfig, newConfig, false)) {
@@ -513,6 +514,7 @@ public class StudyUtils extends IntentService {
                             }
                         });
                     }
+                    study.close();
                     return;
                 }
                 applySettings(context, studyUrl, new JSONArray().put(newConfig), true, Aware.getSetting(context, Aware_Preferences.DB_PASSWORD));
@@ -545,6 +547,8 @@ public class StudyUtils extends IntentService {
 
                 NotificationManager notManager = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
                 notManager.notify(Applications.ACCESSIBILITY_NOTIFICATION_ID, builder.build());
+
+                if (!study.isClosed()) study.close();
             } catch (JSONException e) {
                 e.printStackTrace();
             }
@@ -573,16 +577,18 @@ public class StudyUtils extends IntentService {
             studyUrl = studyUrl.replace("www.dropbox.com", "dl.dropboxusercontent.com");
         }
 
-        OkHttpClient client = new OkHttpClient();
-        Request request = new Request.Builder().url(studyUrl).build();
-
-        try (Response response = client.newCall(request).execute()) {
+        try {
+            OkHttpClient client = new OkHttpClient();
+            Request request = new Request.Builder().url(studyUrl).build();
+            Response response = client.newCall(request).execute();
             String responseStr = response.body().string();
             JSONObject responseJson = new JSONObject(responseStr);
             return responseJson;
-        } catch (IOException e) {
+        } catch (IllegalArgumentException | IOException e) {
             return null;
         }
+
+
     }
 
     /**
