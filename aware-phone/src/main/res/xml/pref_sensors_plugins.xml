@@ -19,6 +19,9 @@ Refer to pref_aware_light.xml for all other components.
             android:key="accelerometer"
             android:summary="Raw acceleration, including the force of gravity"
             android:title="Accelerometer">
+            <EditTextPreference
+                android:title="Additional permissions required"
+                android:summary="None" />
             <CheckBoxPreference
                 android:defaultValue="false"
                 android:key="status_accelerometer"
@@ -47,6 +50,9 @@ Refer to pref_aware_light.xml for all other components.
             android:key="applications"
             android:summary="Application usage and interactions"
             android:title="Applications">
+            <EditTextPreference
+                android:title="Additional permissions required"
+                android:summary="None" />
             <CheckBoxPreference
                 android:defaultValue="false"
                 android:key="status_applications"
@@ -75,6 +81,9 @@ Refer to pref_aware_light.xml for all other components.
             android:key="light"
             android:summary="Surrounding illumination"
             android:title="Ambient light">
+            <EditTextPreference
+                android:title="Additional permissions required"
+                android:summary="None" />
             <CheckBoxPreference
                 android:defaultValue="false"
                 android:key="status_light"
@@ -101,6 +110,9 @@ Refer to pref_aware_light.xml for all other components.
             android:key="bluetooth"
             android:summary="Nearby Bluetooth-enabled and visible devices"
             android:title="Bluetooth">
+            <EditTextPreference
+                android:title="Additional permissions required"
+                android:summary="Bluetooth scanning, access to approximate location" />
             <CheckBoxPreference
                 android:defaultValue="false"
                 android:key="status_bluetooth"
@@ -122,6 +134,9 @@ Refer to pref_aware_light.xml for all other components.
             android:key="communication"
             android:summary="Calls and messages"
             android:title="Communication">
+            <EditTextPreference
+                android:title="Additional permissions required"
+                android:summary="Access to read contacts, call logs, and text messages" />
             <CheckBoxPreference
                 android:defaultValue="false"
                 android:key="status_calls"
@@ -140,6 +155,9 @@ Refer to pref_aware_light.xml for all other components.
             android:key="locations"
             android:summary="Estimated based on GPS and/or network"
             android:title="Locations">
+            <EditTextPreference
+                android:title="Additional permissions required"
+                android:summary="Access to approximate or precise location and cellular network" />
             <CheckBoxPreference
                 android:defaultValue="false"
                 android:key="status_location_gps"
@@ -182,6 +200,9 @@ Refer to pref_aware_light.xml for all other components.
             android:key="screen"
             android:summary="Screen states, interactions, and content"
             android:title="Screen events">
+            <EditTextPreference
+                android:title="Additional permissions required"
+                android:summary="None" />
             <CheckBoxPreference
                 android:defaultValue="false"
                 android:key="status_screen"
@@ -218,6 +239,9 @@ Refer to pref_aware_light.xml for all other components.
             android:key="esm"
             android:summary="Receive prompts to assess current behaviors and experiences"
             android:title="Self assessments">
+            <EditTextPreference
+                android:title="Additional permissions required"
+                android:summary="None" />
             <CheckBoxPreference
                 android:defaultValue="false"
                 android:key="status_esm"
@@ -230,6 +254,9 @@ Refer to pref_aware_light.xml for all other components.
             android:key="wifi"
             android:summary="Surrounding Wi-Fi visible devices"
             android:title="Wi-Fi">
+            <EditTextPreference
+                android:title="Additional permissions required"
+                android:summary="Access to Wi-Fi connectivity states" />
             <CheckBoxPreference
                 android:defaultValue="false"
                 android:key="status_wifi"

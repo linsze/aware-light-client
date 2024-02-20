@@ -1,15 +1,27 @@
 package com.aware.utils;
 
+import static com.aware.ui.PermissionsHandler.ACTION_AWARE_PERMISSIONS_CHECK;
+import static com.aware.ui.PermissionsHandler.SCHEDULER_FULL_PERMISSIONS_NOT_GRANTED;
+import static com.aware.ui.PermissionsHandler.SERVICE_NAME;
+import static com.aware.ui.PermissionsHandler.UNGRANTED_PERMISSIONS;
+
 import android.Manifest;
 import android.app.Service;
 import android.content.*;
+import android.content.pm.PackageManager;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.IBinder;
 import android.util.Log;
+
+import androidx.core.content.ContextCompat;
 import androidx.core.content.PermissionChecker;
 import com.aware.Aware;
+import com.aware.Aware_Preferences;
 import com.aware.ui.PermissionsHandler;
+
+import org.json.JSONException;
+import org.json.JSONObject;
 
 import java.util.ArrayList;
 
@@ -36,6 +48,11 @@ public class Aware_Sensor extends Service {
      * Permissions needed for this plugin to run
      */
     public ArrayList<String> REQUIRED_PERMISSIONS = new ArrayList<>();
+
+    /**
+     * Permissions currently yet to be granted
+     */
+    private ArrayList<String> PENDING_PERMISSIONS = new ArrayList<>();
 
     /**
      * Indicates if permissions were accepted OK
@@ -83,27 +100,64 @@ public class Aware_Sensor extends Service {
         Log.d(Aware.TAG, "created: " + getClass().getName() + " package: " + getPackageName());
     }
 
-    @Override
-    public int onStartCommand(Intent intent, int flags, int startId) {
+    /**
+     * Checks if all required permissions have been granted and keeps track if they have been requested before.
+     */
+    private void checkPermissionRequests() {
         PERMISSIONS_OK = true;
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            for (String p : REQUIRED_PERMISSIONS) {
-                if (PermissionChecker.checkSelfPermission(this, p) != PermissionChecker.PERMISSION_GRANTED) {
-                    PERMISSIONS_OK = false;
-                    break;
+        PENDING_PERMISSIONS = new ArrayList<>();
+
+        //HACK: Store into a list of pending permissions if they have not been requested before
+        String permissionRequestStatuses = Aware.getSetting(getApplicationContext(), Aware_Preferences.PERMISSION_REQUEST_STATUSES);
+        JSONObject permissionRequests = new JSONObject();
+        try {
+            if (!permissionRequestStatuses.equals("")) {
+                permissionRequests = new JSONObject(permissionRequestStatuses);
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                for (String p : REQUIRED_PERMISSIONS) {
+                    //HACK: https://stackoverflow.com/questions/44813943/should-i-prefer-contextcompat-or-permissionchecker-for-permission-checking-on-an
+                    // if (PermissionChecker.checkSelfPermission(this, p) != PermissionChecker.PERMISSION_GRANTED) {
+                    if (ContextCompat.checkSelfPermission(this, p) != PackageManager.PERMISSION_GRANTED) {
+                        PERMISSIONS_OK = false;
+                        PENDING_PERMISSIONS.add(p);
+                        // Stores status if permission has been requested before or by other services
+                        if (!permissionRequests.has(p) || !permissionRequests.getBoolean(p)) {
+                            permissionRequests.put(p, false);
+                        }
+                    }
                 }
             }
+            Aware.setSetting(getApplicationContext(), Aware_Preferences.PERMISSION_REQUEST_STATUSES, permissionRequests.toString());
+        } catch (JSONException e) {
+            e.printStackTrace();
         }
+    }
 
+    @Override
+    public int onStartCommand(Intent intent, int flags, int startId) {
+        checkPermissionRequests();
+
+        //HACK: Not all permissions are granted but they have been requested
+        // Send broadcast to activity to display a dialog
         if (!PERMISSIONS_OK) {
-            Intent permissions = new Intent(this, PermissionsHandler.class);
-            permissions.putExtra(PermissionsHandler.EXTRA_REQUIRED_PERMISSIONS, REQUIRED_PERMISSIONS);
-            permissions.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-            permissions.putExtra(PermissionsHandler.EXTRA_REDIRECT_SERVICE, getPackageName() + "/" + getClass().getName()); //restarts plugin once permissions are accepted
-            startActivity(permissions);
+            if (intent != null && intent.getAction() != null && intent.getAction().equals(ACTION_AWARE_PERMISSIONS_CHECK)) {
+                Intent cantRunSchedulerIntent = new Intent(SCHEDULER_FULL_PERMISSIONS_NOT_GRANTED);
+                cantRunSchedulerIntent.putExtra(SERVICE_NAME, getClass().getName());
+                cantRunSchedulerIntent.putExtra(UNGRANTED_PERMISSIONS, PENDING_PERMISSIONS);
+                sendBroadcast(cantRunSchedulerIntent);
+                stopSelf();
+                return START_NOT_STICKY;
+            } else if (PENDING_PERMISSIONS.size() > 0) {
+                Intent permissions = new Intent(this, PermissionsHandler.class);
+                //HACK: Modified to only request for additional permissions that were not granted initially
+                permissions.putExtra(PermissionsHandler.EXTRA_REQUIRED_PERMISSIONS, PENDING_PERMISSIONS);
+//            permissions.putExtra(PermissionsHandler.EXTRA_REQUIRED_PERMISSIONS, REQUIRED_PERMISSIONS);
+                permissions.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                permissions.putExtra(PermissionsHandler.EXTRA_REDIRECT_SERVICE, getApplicationContext().getPackageName() + "/" + getClass().getName()); //restarts plugin once permissions are accepted
+                startActivity(permissions);
+            }
         } else {
-            PERMISSIONS_OK = true;
-
 //            if (Aware.getSetting(this, Aware_Preferences.STATUS_WEBSERVICE).equals("true") && Aware.getSetting(this, Aware_Preferences.WEBSERVICE_SERVER).contains("https")) {
 //                downloadCertificate(this);
 //            }

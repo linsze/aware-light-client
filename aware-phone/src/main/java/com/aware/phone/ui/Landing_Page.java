@@ -20,11 +20,7 @@ public class Landing_Page extends Aware_Activity {
         if (Aware.isStudy(getApplicationContext())) {
             activityToRedirect = new Intent(getApplicationContext(), Aware_Light_Client.class);
         } else {
-//            activityToRedirect = new Intent(getApplicationContext(), Configure.class);
-            setContentView(R.layout.aware_light_main);
-            addPreferencesFromResource(R.xml.pref_aware_device);
-            View bottomNavigationMenu = findViewById(R.id.aware_bottombar);
-            bottomNavigationMenu.setVisibility(View.GONE);
+            activityToRedirect = new Intent(getApplicationContext(), Configure.class);
         }
         if (activityToRedirect != null) {
             startActivity(activityToRedirect);

@@ -2,55 +2,37 @@ package com.aware.phone.ui;
 
 import android.Manifest;
 import android.app.Activity;
-import android.app.Dialog;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
+import android.content.BroadcastReceiver;
 import android.content.Context;
-import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
-import android.graphics.PorterDuff;
-import android.graphics.PorterDuffColorFilter;
-import android.graphics.drawable.Drawable;
 import android.hardware.Sensor;
 import android.hardware.SensorManager;
 import android.net.Uri;
-import android.os.AsyncTask;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.PowerManager;
-import android.preference.CheckBoxPreference;
-import android.preference.EditTextPreference;
-import android.preference.ListPreference;
 import android.preference.Preference;
-import android.preference.PreferenceCategory;
 import android.preference.PreferenceGroup;
 import android.preference.PreferenceManager;
 import android.preference.PreferenceScreen;
 import android.provider.Settings;
 import android.util.Log;
-import android.view.View;
 import android.view.ViewGroup;
-import android.widget.ListAdapter;
 import android.widget.ListView;
-import android.widget.TextView;
-import android.widget.Toast;
 
 import com.aware.Applications;
 import com.aware.Aware;
 import com.aware.Aware_Preferences;
 import com.aware.phone.R;
 import com.aware.ui.PermissionsHandler;
-import com.google.android.material.bottomnavigation.BottomNavigationMenu;
+import com.aware.utils.PermissionDialog;
 
-import org.json.JSONArray;
-import org.json.JSONException;
-import org.json.JSONObject;
-
-import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.Hashtable;
 import java.util.List;
@@ -58,17 +40,19 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
-import androidx.appcompat.widget.Toolbar;
 import androidx.core.app.NotificationCompat;
-import androidx.core.content.ContextCompat;
 import androidx.core.content.PermissionChecker;
 
 import static com.aware.Aware.AWARE_NOTIFICATION_IMPORTANCE_GENERAL;
 import static com.aware.Aware.TAG;
 import static com.aware.Aware.setNotificationProperties;
+import static com.aware.ui.PermissionsHandler.PLUGIN_FULL_PERMISSIONS_NOT_GRANTED;
+import static com.aware.ui.PermissionsHandler.RC_PERMISSIONS;
+import static com.aware.ui.PermissionsHandler.SERVICE_NAME;
+import static com.aware.ui.PermissionsHandler.UNGRANTED_PERMISSIONS;
 
 /**
- * Main page (Home) that provides the study description and manages sensor and plugin setup.
+ * Main page (Home) that provides the study description and navigation instructions.
  */
 public class Aware_Light_Client extends Aware_Activity {
     private static SharedPreferences prefs;
@@ -81,6 +65,8 @@ public class Aware_Light_Client extends Aware_Activity {
 
     private final Aware.AndroidPackageMonitor packageMonitor = new Aware.AndroidPackageMonitor();
 
+    private final PermissionResultReceiver permissionResultReceiver = new PermissionResultReceiver();
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -89,28 +75,18 @@ public class Aware_Light_Client extends Aware_Activity {
         // Initialize views
 //        setContentView(R.layout.activity_aware_light);
         setContentView(R.layout.aware_light_main);
-
-        if (Aware.isStudy(getApplicationContext())) {
-            addPreferencesFromResource(R.xml.pref_home);
-            // Set page title
-            TextView pageTitle = findViewById(R.id.page_title);
-            pageTitle.setText("Home");
-            // Remove listview item separator and adjust top margin specifically for the current layout
-            ListView overallListView = getListView();
-            overallListView.setDivider(null);
-            ViewGroup.MarginLayoutParams layoutParams = (ViewGroup.MarginLayoutParams) overallListView
-                    .getLayoutParams();
-            layoutParams.setMargins(layoutParams.leftMargin, 35, layoutParams.rightMargin, layoutParams.bottomMargin);
-        } else {
-            addPreferencesFromResource(R.xml.pref_aware_device);
-            TextView pageTitle = findViewById(R.id.page_title);
-            pageTitle.setText("");
-            View bottomNavigationMenu = findViewById(R.id.aware_bottombar);
-            bottomNavigationMenu.setVisibility(View.GONE);
-        }
+        addPreferencesFromResource(R.xml.pref_home);
+        // Remove listview item separator and adjust top margin specifically for the current layout
+        ListView overallListView = getListView();
+        overallListView.setDivider(null);
+        ViewGroup.MarginLayoutParams layoutParams = (ViewGroup.MarginLayoutParams) overallListView
+                .getLayoutParams();
+        layoutParams.setMargins(layoutParams.leftMargin, 0, layoutParams.rightMargin, layoutParams.bottomMargin);
+        startAwareService();
 //        hideUnusedPreferences();
+    }
 
-
+    private void startAwareService() {
         // Initialize and check optional sensors and required permissions before starting AWARE service
         optionalSensors.put(Aware_Preferences.STATUS_ACCELEROMETER, Sensor.TYPE_ACCELEROMETER);
         optionalSensors.put(Aware_Preferences.STATUS_SIGNIFICANT_MOTION, Sensor.TYPE_ACCELEROMETER);
@@ -131,20 +107,23 @@ public class Aware_Light_Client extends Aware_Activity {
             listSensorType.put(sensors.get(i).getType(), true);
         }
 
+        //NOTE: Only request for currently necessary permissions at the beginning
         REQUIRED_PERMISSIONS.add(Manifest.permission.WRITE_EXTERNAL_STORAGE);
         REQUIRED_PERMISSIONS.add(Manifest.permission.ACCESS_WIFI_STATE);
-
-//        REQUIRED_PERMISSIONS.add(Manifest.permission.CAMERA);
-        REQUIRED_PERMISSIONS.add(Manifest.permission.BLUETOOTH);
-        REQUIRED_PERMISSIONS.add(Manifest.permission.BLUETOOTH_ADMIN);
-        REQUIRED_PERMISSIONS.add(Manifest.permission.ACCESS_COARSE_LOCATION);
-        REQUIRED_PERMISSIONS.add(Manifest.permission.ACCESS_FINE_LOCATION);
-        REQUIRED_PERMISSIONS.add(Manifest.permission.READ_PHONE_STATE);
         REQUIRED_PERMISSIONS.add(Manifest.permission.GET_ACCOUNTS);
         REQUIRED_PERMISSIONS.add(Manifest.permission.WRITE_SYNC_SETTINGS);
         REQUIRED_PERMISSIONS.add(Manifest.permission.READ_SYNC_SETTINGS);
         REQUIRED_PERMISSIONS.add(Manifest.permission.READ_SYNC_STATS);
         REQUIRED_PERMISSIONS.add(Manifest.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS);
+
+        //NOTE: Commented out permissions are only required for specific sensors
+//        REQUIRED_PERMISSIONS.add(Manifest.permission.CAMERA);
+//        REQUIRED_PERMISSIONS.add(Manifest.permission.BLUETOOTH);
+//        REQUIRED_PERMISSIONS.add(Manifest.permission.BLUETOOTH_ADMIN);
+//        REQUIRED_PERMISSIONS.add(Manifest.permission.ACCESS_COARSE_LOCATION);
+//        REQUIRED_PERMISSIONS.add(Manifest.permission.ACCESS_FINE_LOCATION);
+//        REQUIRED_PERMISSIONS.add(Manifest.permission.READ_PHONE_STATE);
+
 
         if(Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) REQUIRED_PERMISSIONS.add(Manifest.permission.FOREGROUND_SERVICE);
 
@@ -173,6 +152,10 @@ public class Aware_Light_Client extends Aware_Activity {
             whitelisting.setData(Uri.parse("package:" + getPackageName()));
             startActivity(whitelisting);
         }
+
+        IntentFilter permissionResults = new IntentFilter();
+        permissionResults.addAction(PLUGIN_FULL_PERMISSIONS_NOT_GRANTED);
+        registerReceiver(permissionResultReceiver, permissionResults);
     }
 
     @Override
@@ -196,10 +179,10 @@ public class Aware_Light_Client extends Aware_Activity {
             permissionsHandler.putStringArrayListExtra(PermissionsHandler.EXTRA_REQUIRED_PERMISSIONS, REQUIRED_PERMISSIONS);
             permissionsHandler.putExtra(PermissionsHandler.EXTRA_REDIRECT_ACTIVITY, getPackageName() + "/" + getClass().getName());
             permissionsHandler.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-            startActivity(permissionsHandler);
+//            startActivity(permissionsHandler);
+            startActivityForResult(permissionsHandler, RC_PERMISSIONS);
 
         } else {
-
             if (prefs.getAll().isEmpty() && Aware.getSetting(getApplicationContext(), Aware_Preferences.DEVICE_ID).length() == 0) {
                 PreferenceManager.setDefaultValues(getApplicationContext(), "com.aware.phone", Context.MODE_PRIVATE, R.xml.aware_preferences, true);
                 prefs.edit().commit();
@@ -248,6 +231,22 @@ public class Aware_Light_Client extends Aware_Activity {
         }
     }
 
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        if (requestCode == RC_PERMISSIONS) {
+            if (resultCode == Activity.RESULT_CANCELED) {
+                if (data != null) {
+                    String service = data.getStringExtra(SERVICE_NAME);
+                    ArrayList<String> pendingPermissions = data.getStringArrayListExtra(UNGRANTED_PERMISSIONS);
+                    if (!pendingPermissions.isEmpty()) {
+                        new PermissionDialog(Aware_Light_Client.this, service, pendingPermissions, true).showDialog();
+                    }
+                }
+                return;
+            }
+        }
+        super.onActivityResult(requestCode, resultCode, data);
+    }
 
     @Override
     public void onSharedPreferenceChanged(SharedPreferences sharedPreferences, String s) {
@@ -321,6 +320,7 @@ public class Aware_Light_Client extends Aware_Activity {
         Log.d("AWARE-Light_Client", "AWARE-Light interface cleaned from the list of frequently used apps");
         super.onDestroy();
         unregisterReceiver(packageMonitor);
+        unregisterReceiver(permissionResultReceiver);
     }
 
     private void hideUnusedPreferences() {
@@ -328,6 +328,18 @@ public class Aware_Light_Client extends Aware_Activity {
         if (dataExchangePref != null) {
             PreferenceScreen rootSensorPref = (PreferenceScreen) getPreferenceParent(dataExchangePref);
             rootSensorPref.removePreference(dataExchangePref);
+        }
+    }
+
+    private class PermissionResultReceiver extends BroadcastReceiver {
+
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            String plugin = intent.getStringExtra(SERVICE_NAME);
+            ArrayList<String> pendingPermissions = intent.getStringArrayListExtra(UNGRANTED_PERMISSIONS);
+            if (!pendingPermissions.isEmpty()) {
+                new PermissionDialog(Aware_Light_Client.this, plugin, pendingPermissions, false).showDialog();
+            }
         }
     }
 }
