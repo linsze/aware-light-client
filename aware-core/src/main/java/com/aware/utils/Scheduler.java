@@ -750,9 +750,10 @@ public class Scheduler extends Aware_Sensor {
                 if (DEBUG) Log.d(TAG, "No scheduled tasks for " + getPackageName());
             }
             if (scheduled_tasks != null && !scheduled_tasks.isClosed()) scheduled_tasks.close();
+            return START_STICKY;
+        } else {
+           return START_NOT_STICKY;
         }
-
-        return START_STICKY;
     }
 
     @Override

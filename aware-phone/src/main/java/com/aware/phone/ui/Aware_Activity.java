@@ -2,17 +2,14 @@ package com.aware.phone.ui;
 
 import android.Manifest;
 import android.content.Intent;
-import android.content.pm.PackageManager;
 import android.os.Build;
 import android.os.Bundle;
 import android.view.Menu;
 import android.view.MenuItem;
-import android.widget.Toast;
 import androidx.annotation.NonNull;
 import androidx.core.content.PermissionChecker;
 import com.aware.Aware;
 import com.aware.Aware_Preferences;
-import com.aware.phone.Aware_Client;
 import com.aware.phone.R;
 import com.aware.phone.ui.dialogs.JoinStudyDialog;
 import com.aware.ui.PermissionsHandler;
@@ -32,22 +29,40 @@ public abstract class Aware_Activity extends AppCompatPreferenceActivity {
         }
 
         BottomNavigationView bottomNavigationView = (BottomNavigationView) findViewById(R.id.aware_bottombar);
+
+        // HACK: Retrieves intent extra to change navigation drawer background
+        if (getIntent() != null && getIntent().getExtras() != null) {
+            int pageId = getIntent().getIntExtra("page", 0);
+            Menu menu = bottomNavigationView.getMenu();
+            for (int i = 0; i < menu.size(); i++) {
+                MenuItem item = menu.getItem(i);
+                item.setChecked(false);
+            }
+            MenuItem selectedItem = menu.getItem(pageId);
+            selectedItem.setChecked(true);
+        }
+
+
         if (bottomNavigationView != null) {
             bottomNavigationView.setOnNavigationItemSelectedListener(new BottomNavigationView.OnNavigationItemSelectedListener() {
                 @Override
                 public boolean onNavigationItemSelected(@NonNull MenuItem item) {
+                    //HACK: Include menu item id in intent to highlight item background in navigation drawer
                     switch (item.getItemId()) {
                         case R.id.home: //Home
                             Intent mainUI = new Intent(getApplicationContext(), Aware_Light_Client.class);
+                            mainUI.putExtra("page", 0);
                             startActivity(mainUI);
                             break;
                         case R.id.settings: //Settings
                             // Intent pluginsManager = new Intent(getApplicationContext(), Plugins_Manager.class);
                             Intent settingsUI = new Intent(getApplicationContext(), Settings_Page.class);
+                            settingsUI.putExtra("page", 1);
                             startActivity(settingsUI);
                             break;
                         case R.id.data: //Stream
                             Intent dataUI = new Intent(getApplicationContext(), Stream_UI.class);
+                            dataUI.putExtra("page", 2);
                             startActivity(dataUI);
                             break;
                     }

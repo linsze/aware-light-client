@@ -796,7 +796,12 @@ public class Aware extends Service {
             if (Aware.isStudy(this)) {
                 ContentResolver.setIsSyncable(Aware.getAWAREAccount(this), Aware_Provider.getAuthority(this), 1);
                 ContentResolver.setSyncAutomatically(Aware.getAWAREAccount(this), Aware_Provider.getAuthority(this), true);
-                long frequency = Long.parseLong(Aware.getSetting(this, Aware_Preferences.FREQUENCY_WEBSERVICE)) * 60;
+                long frequency;
+                try {
+                    frequency = Long.parseLong(Aware.getSetting(this, Aware_Preferences.FREQUENCY_WEBSERVICE)) * 60;
+                } catch (NumberFormatException e) {
+                    frequency = 30 * 60;
+                }
                 SyncRequest request = new SyncRequest.Builder()
                         .syncPeriodic(frequency, frequency/3)
                         .setSyncAdapter(Aware.getAWAREAccount(this), Aware_Provider.getAuthority(this))
@@ -806,7 +811,11 @@ public class Aware extends Service {
                 // Set scheduler for syncing config data
                 try {
                     Scheduler.Schedule syncConfig = Scheduler.getSchedule(this, Aware.SCHEDULE_SYNC_CONFIG);
-                    frequency = Long.parseLong(getSetting(this, Aware_Preferences.FREQUENCY_SYNC_CONFIG));
+                    try {
+                        frequency = Long.parseLong(getSetting(this, Aware_Preferences.FREQUENCY_SYNC_CONFIG));
+                    } catch (NumberFormatException e) {
+                        frequency = 60;
+                    }
 
                     if (syncConfig != null && syncConfig.getInterval() != frequency) {
                         syncConfig.setInterval(frequency);

@@ -69,6 +69,25 @@
                 android:layout_height="wrap_content"
                 android:text="Researcher"
                 android:textAppearance="@style/TextAppearance.AppCompat.Small" />
+<!--            <TextView-->
+<!--                android:layout_width="match_parent"-->
+<!--                android:layout_height="wrap_content"-->
+<!--                android:layout_marginTop="20dp"-->
+<!--                android:text="URL:"-->
+<!--                android:textAppearance="@style/TextAppearance.MaterialComponents.Subtitle1" />-->
+<!--            <TextView-->
+<!--                android:id="@+id/onboarding_heading"-->
+<!--                android:layout_width="match_parent"-->
+<!--                android:layout_height="wrap_content"-->
+<!--                android:layout_marginEnd="5dp"-->
+<!--                android:text="Enter the URL link shared with you to configure the study."-->
+<!--                android:textAppearance="@style/TextAppearance.AppCompat.Small" />-->
+<!--            <EditText-->
+<!--                android:layout_height="wrap_content"-->
+<!--                android:layout_width="match_parent"-->
+<!--                android:id="@+id/et_join_study_url"-->
+<!--                android:textAppearance="@style/TextAppearance.MaterialComponents.Body2"-->
+<!--                />-->
             <TextView
                 android:id="@+id/onboarding_heading"
                 android:layout_width="match_parent"
@@ -88,7 +107,7 @@
                     android:layout_height="wrap_content"
                     android:ems="10"
                     android:id="@+id/participant_label"
-                    android:inputType="textEmailAddress" android:hint="Enter your study identifier here"
+                    android:inputType="textEmailAddress"
                     android:textAppearance="@style/TextAppearance.MaterialComponents.Body2"    />
 
 <!--            <TextView-->

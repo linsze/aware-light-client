@@ -295,7 +295,12 @@ public class Magnetometer extends Aware_Sensor implements SensorEventListener {
                 if (Aware.isStudy(this)) {
                     ContentResolver.setIsSyncable(Aware.getAWAREAccount(this), Magnetometer_Provider.getAuthority(this), 1);
                     ContentResolver.setSyncAutomatically(Aware.getAWAREAccount(this), Magnetometer_Provider.getAuthority(this), true);
-                    long frequency = Long.parseLong(Aware.getSetting(this, Aware_Preferences.FREQUENCY_WEBSERVICE)) * 60;
+                    long frequency;
+                    try {
+                        frequency = Long.parseLong(Aware.getSetting(this, Aware_Preferences.FREQUENCY_WEBSERVICE)) * 60;
+                    } catch (NumberFormatException e) {
+                        frequency = 30 * 60;
+                    }
                     SyncRequest request = new SyncRequest.Builder()
                             .syncPeriodic(frequency, frequency / 3)
                             .setSyncAdapter(Aware.getAWAREAccount(this), Magnetometer_Provider.getAuthority(this))

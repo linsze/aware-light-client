@@ -735,4 +735,6 @@ public class Aware_Preferences {
      * AES 128-bit key for decrypting study config file
      */
     public static final String STUDY_CONFIG_KEY = "study_config_key";
+
+    public static final String PERMISSION_REQUEST_STATUSES = "permission_request_statuses";
 }

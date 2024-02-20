@@ -600,8 +600,12 @@ public class StudyUtils extends IntentService {
      * @return true if the study config is valid, false otherwise
      */
     public static boolean validateStudyConfig(Context context, JSONObject config, String input_password) {
-        for (String key: REQUIRED_STUDY_CONFIG_KEYS) {
-            if (!config.has(key)) return false;
+        try {
+            for (String key: REQUIRED_STUDY_CONFIG_KEYS) {
+                if (!config.has(key)) return false;
+            }
+        } catch (NullPointerException e) {
+            return false;
         }
 
         // Test database connection

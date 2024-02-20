@@ -1,22 +1,25 @@
 <?xml version="1.0" encoding="utf-8"?>
 <menu xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto">
-    <item
-        android:enabled="true"
-        android:id="@+id/home"
-        android:icon="@drawable/ic_home"
-        android:title="Home"
-        app:showAsAction="always" />
-    <item
-        android:enabled="true"
-        android:id="@+id/settings"
-        android:icon="@drawable/ic_settings"
-        android:title="Settings"
-        app:showAsAction="always" />
-    <item
-        android:enabled="true"
-        android:id="@+id/data"
-        android:icon="@drawable/ic_data"
-        android:title="Data"
-        app:showAsAction="always" />
+    <group
+        android:checkableBehavior="single">
+        <item
+            android:enabled="true"
+            android:id="@+id/home"
+            android:icon="@drawable/ic_home"
+            android:title="Home"
+            app:showAsAction="always" />
+        <item
+            android:enabled="true"
+            android:id="@+id/settings"
+            android:icon="@drawable/ic_settings"
+            android:title="Settings"
+            app:showAsAction="always" />
+        <item
+            android:enabled="true"
+            android:id="@+id/data"
+            android:icon="@drawable/ic_data"
+            android:title="Data"
+            app:showAsAction="always" />
+    </group>
 </menu>
