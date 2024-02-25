@@ -2,7 +2,7 @@
 package com.aware.utils;
 
 import static com.aware.ui.PermissionsHandler.ACTION_AWARE_PERMISSIONS_CHECK;
-import static com.aware.ui.PermissionsHandler.PLUGIN_FULL_PERMISSIONS_NOT_GRANTED;
+import static com.aware.ui.PermissionsHandler.SERVICE_FULL_PERMISSIONS_NOT_GRANTED;
 import static com.aware.ui.PermissionsHandler.SERVICE_NAME;
 import static com.aware.ui.PermissionsHandler.UNGRANTED_PERMISSIONS;
 
@@ -13,6 +13,7 @@ import android.content.pm.PackageManager;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.IBinder;
+import android.text.TextUtils;
 import android.util.Log;
 
 import androidx.core.content.ContextCompat;
@@ -25,6 +26,7 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 
 /**
  * Aware_Plugin: Extend to integrate with the framework (extension of Android Service class).
@@ -146,30 +148,37 @@ public class Aware_Plugin extends Service {
         if (!PERMISSIONS_OK) {
             if (intent != null && intent.getAction() != null && intent.getAction().equals(ACTION_AWARE_PERMISSIONS_CHECK)) {
                 Intent cantStartPluginIntent = new Intent();
-                cantStartPluginIntent.setAction(PLUGIN_FULL_PERMISSIONS_NOT_GRANTED);
+                cantStartPluginIntent.setAction(SERVICE_FULL_PERMISSIONS_NOT_GRANTED);
                 cantStartPluginIntent.putExtra(SERVICE_NAME, getClass().getName());
                 cantStartPluginIntent.putExtra(UNGRANTED_PERMISSIONS, PENDING_PERMISSIONS);
                 sendBroadcast(cantStartPluginIntent);
                 stopSelf();
-                return START_NOT_STICKY;
             } else if (PENDING_PERMISSIONS.size() > 0) {
-                Intent permissions = new Intent(this, PermissionsHandler.class);
-                //HACK: Modified to only request for additional permissions that were not granted initially
-                permissions.putExtra(PermissionsHandler.EXTRA_REQUIRED_PERMISSIONS, PENDING_PERMISSIONS);
-//            permissions.putExtra(PermissionsHandler.EXTRA_REQUIRED_PERMISSIONS, REQUIRED_PERMISSIONS);
-                permissions.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                permissions.putExtra(PermissionsHandler.EXTRA_REDIRECT_SERVICE, getApplicationContext().getPackageName() + "/" + getClass().getName()); //restarts plugin once permissions are accepted
-                startActivity(permissions);
+                if (PermissionUtils.checkPermissionServiceQueue(getApplicationContext(), getClass().getName())) {
+                    Intent permissions = new Intent(this, PermissionsHandler.class);
+                    //HACK: Modified to only request for additional permissions that were not granted initially
+                    permissions.putExtra(PermissionsHandler.EXTRA_REQUIRED_PERMISSIONS, PENDING_PERMISSIONS);
+                    // permissions.putExtra(PermissionsHandler.EXTRA_REQUIRED_PERMISSIONS, REQUIRED_PERMISSIONS);
+                    permissions.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                    permissions.putExtra(PermissionsHandler.EXTRA_REDIRECT_SERVICE, getApplicationContext().getPackageName() + "/" + getClass().getName()); //restarts plugin once permissions are accepted
+                    startActivity(permissions);
+                }
             }
+            return START_NOT_STICKY;
         } else if (PERMISSIONS_OK) {
+            Intent pluginActiveIntent = new Intent();
+            pluginActiveIntent.setAction(Aware.PLUGIN_STATUS_UPDATE);
+            pluginActiveIntent.putExtra(Aware.PLUGIN_NAME, getClass().getName());
+            pluginActiveIntent.putExtra(Aware.PLUGIN_STATUS, true);
+            sendBroadcast(pluginActiveIntent);
 //            if (Aware.getSetting(this, Aware_Preferences.STATUS_WEBSERVICE).equals("true")) {
 //                SSLManager.handleUrl(getApplicationContext(), Aware.getSetting(this, Aware_Preferences.WEBSERVICE_SERVER), true);
 //            }
             //Restores core AWARE service in case it get's killed
-            if (!Aware.IS_CORE_RUNNING) {
-                Intent aware = new Intent(getApplicationContext(), Aware.class);
-                startService(aware);
-            }
+            // if (!Aware.IS_CORE_RUNNING) {
+            //     Intent aware = new Intent(getApplicationContext(), Aware.class);
+            //     startService(aware);
+            // }
 
             //Aware.startAWARE(getApplicationContext());
 
@@ -189,6 +198,12 @@ public class Aware_Plugin extends Service {
         }
 
         if (contextBroadcaster != null) unregisterReceiver(contextBroadcaster);
+
+        Intent pluginInactiveIntent = new Intent();
+        pluginInactiveIntent.setAction(Aware.PLUGIN_STATUS_UPDATE);
+        pluginInactiveIntent.putExtra(Aware.PLUGIN_NAME, getClass().getName());
+        pluginInactiveIntent.putExtra(Aware.PLUGIN_STATUS, false);
+        sendBroadcast(pluginInactiveIntent);
     }
 
     /**

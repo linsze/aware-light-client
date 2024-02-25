@@ -1,6 +1,6 @@
 package com.aware.phone.ui;
 
-import static com.aware.ui.PermissionsHandler.SCHEDULER_FULL_PERMISSIONS_NOT_GRANTED;
+import static com.aware.ui.PermissionsHandler.SERVICE_FULL_PERMISSIONS_NOT_GRANTED;
 import static com.aware.ui.PermissionsHandler.SERVICE_NAME;
 import static com.aware.ui.PermissionsHandler.UNGRANTED_PERMISSIONS;
 
@@ -75,7 +75,7 @@ public class Configure extends Aware_Activity {
 //        permissionsRecyclerView.setAdapter(listAdapter);
 
         IntentFilter permissionResults = new IntentFilter();
-        permissionResults.addAction(SCHEDULER_FULL_PERMISSIONS_NOT_GRANTED);
+        permissionResults.addAction(SERVICE_FULL_PERMISSIONS_NOT_GRANTED);
         registerReceiver(permissionResultReceiver, permissionResults);
 
         // Listen to changes in URL input
@@ -317,7 +317,7 @@ public class Configure extends Aware_Activity {
             String serviceName = intent.getStringExtra(SERVICE_NAME);
             ArrayList<String> pendingPermissions = intent.getStringArrayListExtra(UNGRANTED_PERMISSIONS);
             if (!pendingPermissions.isEmpty()) {
-                new PermissionDialog(Configure.this, serviceName, pendingPermissions, true).showDialog();
+                new PermissionUtils.PermissionDialog(Configure.this, serviceName, pendingPermissions, true).showDialog();
             }
         }
     }

@@ -49,8 +49,9 @@ public class JoinStudyDialog extends DialogFragment {
                 .setPositiveButton("Join", new DialogInterface.OnClickListener() {
                     public void onClick(DialogInterface dialog, int id) {
                         EditText etStudyConfigUrl = dialogView.findViewById(R.id.et_join_study_url);
-                        EditText dbPassword = dialogView.findViewById(R.id.db_password); // manually input password
-                        new ValidateStudyConfig().execute(etStudyConfigUrl.getText().toString(), dbPassword.getText().toString());
+//                        EditText dbPassword = dialogView.findViewById(R.id.db_password); // manually input password
+//                        new ValidateStudyConfig().execute(etStudyConfigUrl.getText().toString(), dbPassword.getText().toString());
+                        new ValidateStudyConfig().execute(etStudyConfigUrl.getText().toString(), "");
                     }
                 })
                 .setNegativeButton("Cancel", new DialogInterface.OnClickListener() {

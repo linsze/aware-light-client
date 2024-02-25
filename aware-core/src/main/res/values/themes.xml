@@ -38,8 +38,4 @@
         <item name="android:background">@color/primary</item>
         <item name="android:displayOptions">showHome|homeAsUp|showTitle</item>
     </style>
-
-    <style name="PreferenceHeaderStyle" parent="android:style/Widget">
-
-    </style>
 </resources>

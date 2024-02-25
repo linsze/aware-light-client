@@ -1,10 +1,8 @@
 package com.aware.phone.ui;
 
 import android.Manifest;
-import android.app.Activity;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
-import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
@@ -31,7 +29,7 @@ import com.aware.Aware;
 import com.aware.Aware_Preferences;
 import com.aware.phone.R;
 import com.aware.ui.PermissionsHandler;
-import com.aware.utils.PermissionDialog;
+import com.aware.utils.PermissionUtils;
 
 import java.util.ArrayList;
 import java.util.Hashtable;
@@ -46,10 +44,7 @@ import androidx.core.content.PermissionChecker;
 import static com.aware.Aware.AWARE_NOTIFICATION_IMPORTANCE_GENERAL;
 import static com.aware.Aware.TAG;
 import static com.aware.Aware.setNotificationProperties;
-import static com.aware.ui.PermissionsHandler.PLUGIN_FULL_PERMISSIONS_NOT_GRANTED;
-import static com.aware.ui.PermissionsHandler.RC_PERMISSIONS;
-import static com.aware.ui.PermissionsHandler.SERVICE_NAME;
-import static com.aware.ui.PermissionsHandler.UNGRANTED_PERMISSIONS;
+import static com.aware.ui.PermissionsHandler.SERVICE_FULL_PERMISSIONS_NOT_GRANTED;
 
 /**
  * Main page (Home) that provides the study description and navigation instructions.
@@ -65,7 +60,7 @@ public class Aware_Light_Client extends Aware_Activity {
 
     private final Aware.AndroidPackageMonitor packageMonitor = new Aware.AndroidPackageMonitor();
 
-    private final PermissionResultReceiver permissionResultReceiver = new PermissionResultReceiver();
+    private final PermissionUtils.PermissionResultReceiver permissionResultReceiver = new PermissionUtils.PermissionResultReceiver(Aware_Light_Client.this);
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -154,7 +149,7 @@ public class Aware_Light_Client extends Aware_Activity {
         }
 
         IntentFilter permissionResults = new IntentFilter();
-        permissionResults.addAction(PLUGIN_FULL_PERMISSIONS_NOT_GRANTED);
+        permissionResults.addAction(SERVICE_FULL_PERMISSIONS_NOT_GRANTED);
         registerReceiver(permissionResultReceiver, permissionResults);
     }
 
@@ -179,8 +174,7 @@ public class Aware_Light_Client extends Aware_Activity {
             permissionsHandler.putStringArrayListExtra(PermissionsHandler.EXTRA_REQUIRED_PERMISSIONS, REQUIRED_PERMISSIONS);
             permissionsHandler.putExtra(PermissionsHandler.EXTRA_REDIRECT_ACTIVITY, getPackageName() + "/" + getClass().getName());
             permissionsHandler.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-//            startActivity(permissionsHandler);
-            startActivityForResult(permissionsHandler, RC_PERMISSIONS);
+            startActivity(permissionsHandler);
 
         } else {
             if (prefs.getAll().isEmpty() && Aware.getSetting(getApplicationContext(), Aware_Preferences.DEVICE_ID).length() == 0) {
@@ -229,23 +223,6 @@ public class Aware_Light_Client extends Aware_Activity {
             //Check if AWARE is allowed to run on Doze
             //Aware.isBatteryOptimizationIgnored(this, getPackageName());
         }
-    }
-
-    @Override
-    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
-        if (requestCode == RC_PERMISSIONS) {
-            if (resultCode == Activity.RESULT_CANCELED) {
-                if (data != null) {
-                    String service = data.getStringExtra(SERVICE_NAME);
-                    ArrayList<String> pendingPermissions = data.getStringArrayListExtra(UNGRANTED_PERMISSIONS);
-                    if (!pendingPermissions.isEmpty()) {
-                        new PermissionDialog(Aware_Light_Client.this, service, pendingPermissions, true).showDialog();
-                    }
-                }
-                return;
-            }
-        }
-        super.onActivityResult(requestCode, resultCode, data);
     }
 
     @Override
@@ -328,18 +305,6 @@ public class Aware_Light_Client extends Aware_Activity {
         if (dataExchangePref != null) {
             PreferenceScreen rootSensorPref = (PreferenceScreen) getPreferenceParent(dataExchangePref);
             rootSensorPref.removePreference(dataExchangePref);
-        }
-    }
-
-    private class PermissionResultReceiver extends BroadcastReceiver {
-
-        @Override
-        public void onReceive(Context context, Intent intent) {
-            String plugin = intent.getStringExtra(SERVICE_NAME);
-            ArrayList<String> pendingPermissions = intent.getStringArrayListExtra(UNGRANTED_PERMISSIONS);
-            if (!pendingPermissions.isEmpty()) {
-                new PermissionDialog(Aware_Light_Client.this, plugin, pendingPermissions, false).showDialog();
-            }
         }
     }
 }

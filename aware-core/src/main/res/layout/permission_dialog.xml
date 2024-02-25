@@ -21,4 +21,15 @@
         android:textAppearance="@style/TextAppearance.MaterialComponents.Body2"
         />
 
+    <TextView
+        android:id="@+id/exit_warning"
+        android:layout_height="match_parent"
+        android:layout_width="match_parent"
+        android:layout_marginHorizontal="20dp"
+        android:text="The app may exit if you refuse to update the permissions."
+        android:textStyle="italic"
+        android:textColor="@android:color/holo_red_dark"
+        android:textAppearance="@style/TextAppearance.MaterialComponents.Body2"
+        />
+
 </LinearLayout>

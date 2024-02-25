@@ -1,20 +1,18 @@
 package com.aware.phone.ui;
 
 import static com.aware.Aware.TAG;
+import static com.aware.ui.PermissionsHandler.SERVICE_FULL_PERMISSIONS_NOT_GRANTED;
+import static com.aware.utils.PermissionUtils.SENSOR_PREFERENCE;
+import static com.aware.utils.PermissionUtils.SENSOR_PREFERENCE_CHANGED;
 
 import android.app.Dialog;
 import android.content.BroadcastReceiver;
 import android.content.ComponentName;
-import android.content.ContentValues;
 import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.pm.PackageInfo;
-import android.content.pm.PackageManager;
-import android.content.pm.PackageManager.NameNotFoundException;
-import android.content.pm.ServiceInfo;
-import android.database.Cursor;
 import android.graphics.PorterDuff;
 import android.graphics.PorterDuffColorFilter;
 import android.graphics.drawable.Drawable;
@@ -31,8 +29,6 @@ import android.util.Log;
 import android.view.ViewGroup;
 
 import android.widget.ListAdapter;
-import android.widget.ListView;
-import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.appcompat.widget.Toolbar;
@@ -41,8 +37,7 @@ import androidx.core.content.ContextCompat;
 import com.aware.Aware;
 import com.aware.Aware_Preferences;
 import com.aware.phone.R;
-import com.aware.providers.Aware_Provider;
-import com.aware.utils.Aware_Plugin;
+import com.aware.utils.PermissionUtils;
 import com.aware.utils.PluginsManager;
 
 import org.json.JSONArray;
@@ -56,11 +51,15 @@ import java.util.Map;
 /**
  * Settings page to view and update study, sensors, and plugin configurations.
  */
-public class Settings_Page extends Aware_Activity{
+public class Settings_Page extends Aware_Activity {
 
     private static SharedPreferences prefs;
 
     private PluginsListener pluginsListener;
+
+    private SensorPreferenceListener sensorPreferenceListener = new SensorPreferenceListener();
+
+    private final PermissionUtils.PermissionResultReceiver permissionResultReceiver = new PermissionUtils.PermissionResultReceiver(Settings_Page.this);
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -77,6 +76,14 @@ public class Settings_Page extends Aware_Activity{
         IntentFilter filter = new IntentFilter();
         filter.addAction(Aware.ACTION_AWARE_UPDATE_PLUGINS_INFO);
         registerReceiver(pluginsListener, filter);
+
+        IntentFilter permissionResults = new IntentFilter();
+        permissionResults.addAction(SERVICE_FULL_PERMISSIONS_NOT_GRANTED);
+        registerReceiver(permissionResultReceiver, permissionResults);
+
+        IntentFilter sensorPreferenceChanges = new IntentFilter();
+        sensorPreferenceChanges.addAction(SENSOR_PREFERENCE_CHANGED);
+        registerReceiver(sensorPreferenceListener, sensorPreferenceChanges);
     }
 
     public class PluginsListener extends BroadcastReceiver {
@@ -84,6 +91,18 @@ public class Settings_Page extends Aware_Activity{
         public void onReceive(Context context, Intent intent) {
             if (intent.getAction().equals(Aware.ACTION_AWARE_UPDATE_PLUGINS_INFO)) {
                 updatePluginIndicators();
+            }
+        }
+    }
+
+
+    public class SensorPreferenceListener extends BroadcastReceiver {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            String prefKey = intent.getStringExtra(SENSOR_PREFERENCE);
+            Preference sensorPref = findPreference(prefKey);
+            if (sensorPref != null) {
+                new SettingsSync().execute(sensorPref);
             }
         }
     }
@@ -288,6 +307,8 @@ public class Settings_Page extends Aware_Activity{
     protected void onDestroy() {
         super.onDestroy();
         unregisterReceiver(pluginsListener);
+        unregisterReceiver(permissionResultReceiver);
+        unregisterReceiver(sensorPreferenceListener);
     }
 
     private class SettingsSync extends AsyncTask<Preference, Preference, Void> {
@@ -339,8 +360,12 @@ public class Settings_Page extends Aware_Activity{
             }
 
             if (ListPreference.class.isInstance(pref)) {
-                ListPreference list = (ListPreference) findPreference(pref.getKey());
-                list.setSummary(list.getEntry());
+                String prefString = pref.getKey();
+                ListPreference list = (ListPreference) findPreference(prefString);
+                String freq = Aware.getSetting(getApplicationContext(), prefString);
+                int entryIndex = list.findIndexOfValue(freq);
+                CharSequence entryString = list.getEntries()[entryIndex];
+                list.setSummary(entryString);
             }
 
             if (PreferenceScreen.class.isInstance(getPreferenceParent(pref))) {
