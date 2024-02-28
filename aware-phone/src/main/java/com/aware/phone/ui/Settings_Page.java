@@ -1,9 +1,9 @@
 package com.aware.phone.ui;
 
 import static com.aware.Aware.TAG;
-import static com.aware.ui.PermissionsHandler.SERVICE_FULL_PERMISSIONS_NOT_GRANTED;
+import static com.aware.utils.PermissionUtils.SERVICE_FULL_PERMISSIONS_NOT_GRANTED;
 import static com.aware.utils.PermissionUtils.SENSOR_PREFERENCE;
-import static com.aware.utils.PermissionUtils.SENSOR_PREFERENCE_CHANGED;
+import static com.aware.utils.PermissionUtils.SENSOR_PREFERENCE_UPDATED;
 
 import android.app.Dialog;
 import android.content.BroadcastReceiver;
@@ -59,7 +59,7 @@ public class Settings_Page extends Aware_Activity {
 
     private SensorPreferenceListener sensorPreferenceListener = new SensorPreferenceListener();
 
-    private final PermissionUtils.PermissionResultReceiver permissionResultReceiver = new PermissionUtils.PermissionResultReceiver(Settings_Page.this);
+    private final PermissionUtils.ServicePermissionResultReceiver servicePermissionResultReceiver = new PermissionUtils.ServicePermissionResultReceiver(Settings_Page.this);
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -79,14 +79,17 @@ public class Settings_Page extends Aware_Activity {
 
         IntentFilter permissionResults = new IntentFilter();
         permissionResults.addAction(SERVICE_FULL_PERMISSIONS_NOT_GRANTED);
-        registerReceiver(permissionResultReceiver, permissionResults);
+        registerReceiver(servicePermissionResultReceiver, permissionResults);
 
         IntentFilter sensorPreferenceChanges = new IntentFilter();
-        sensorPreferenceChanges.addAction(SENSOR_PREFERENCE_CHANGED);
+        sensorPreferenceChanges.addAction(SENSOR_PREFERENCE_UPDATED);
         registerReceiver(sensorPreferenceListener, sensorPreferenceChanges);
     }
 
-    public class PluginsListener extends BroadcastReceiver {
+    /**
+     * Listens to updates in plugin statuses to reflect color changes in UI.
+     */
+    private class PluginsListener extends BroadcastReceiver {
         @Override
         public void onReceive(Context context, Intent intent) {
             if (intent.getAction().equals(Aware.ACTION_AWARE_UPDATE_PLUGINS_INFO)) {
@@ -95,8 +98,10 @@ public class Settings_Page extends Aware_Activity {
         }
     }
 
-
-    public class SensorPreferenceListener extends BroadcastReceiver {
+    /**
+     * Listens to changes in sensor preferences to reflect in UI of preference tree.
+     */
+    private class SensorPreferenceListener extends BroadcastReceiver {
         @Override
         public void onReceive(Context context, Intent intent) {
             String prefKey = intent.getStringExtra(SENSOR_PREFERENCE);
@@ -182,7 +187,10 @@ public class Settings_Page extends Aware_Activity {
             new Settings_Page.SettingsSync().execute(pref);
 
             //Start/Stop sensor
-            Aware.startAWARE(getApplicationContext());
+//            Aware.startAWARE(getApplicationContext());
+            //NOTE: Only start/stop the relevant sensor
+            Aware.activateSensorFromPreference(getApplicationContext(), key);
+
         }
         if (EditTextPreference.class.isInstance(pref)) {
             EditTextPreference text = (EditTextPreference) findPreference(key);
@@ -302,12 +310,39 @@ public class Settings_Page extends Aware_Activity {
         if (prefs != null) prefs.unregisterOnSharedPreferenceChangeListener(this);
     }
 
+    /**
+     * Initializes state and value of a specific preference.
+     */
+    private void initializePreferenceValue(Preference preference) {
+        if (CheckBoxPreference.class.isInstance(preference)) {
+            CheckBoxPreference check = (CheckBoxPreference) findPreference(preference.getKey());
+            check.setChecked(Aware.getSetting(getApplicationContext(), preference.getKey()).equals("true"));
+        }
+
+        if (EditTextPreference.class.isInstance(preference)) {
+            EditTextPreference text = (EditTextPreference) findPreference(preference.getKey());
+            if (text != null) {
+                text.setText(Aware.getSetting(getApplicationContext(), preference.getKey()));
+                text.setSummary(Aware.getSetting(getApplicationContext(), preference.getKey()));
+            }
+        }
+
+        if (ListPreference.class.isInstance(preference)) {
+            String prefString = preference.getKey();
+            ListPreference list = (ListPreference) findPreference(prefString);
+            String freq = Aware.getSetting(getApplicationContext(), prefString);
+            int entryIndex = list.findIndexOfValue(freq);
+            CharSequence entryString = list.getEntries()[entryIndex];
+            list.setSummary(entryString);
+        }
+    }
+
 
     @Override
     protected void onDestroy() {
         super.onDestroy();
         unregisterReceiver(pluginsListener);
-        unregisterReceiver(permissionResultReceiver);
+        unregisterReceiver(servicePermissionResultReceiver);
         unregisterReceiver(sensorPreferenceListener);
     }
 
@@ -329,9 +364,9 @@ public class Settings_Page extends Aware_Activity {
             if (pref != null) Log.i(TAG, "Syncing pref with key: " + pref.getKey());
             if (getPreferenceParent(pref) == null) return;
 
+            initializePreferenceValue(pref);
             if (CheckBoxPreference.class.isInstance(pref)) {
                 CheckBoxPreference check = (CheckBoxPreference) findPreference(pref.getKey());
-                check.setChecked(Aware.getSetting(getApplicationContext(), pref.getKey()).equals("true"));
                 if (check.isChecked()) {
                     if (pref.getKey().equalsIgnoreCase(Aware_Preferences.STATUS_WEBSERVICE)) {
                         if (Aware.getSetting(getApplicationContext(), Aware_Preferences.WEBSERVICE_SERVER).length() == 0) {
@@ -353,21 +388,6 @@ public class Settings_Page extends Aware_Activity {
                 }
             }
 
-            if (EditTextPreference.class.isInstance(pref)) {
-                EditTextPreference text = (EditTextPreference) findPreference(pref.getKey());
-                text.setText(Aware.getSetting(getApplicationContext(), pref.getKey()));
-                text.setSummary(Aware.getSetting(getApplicationContext(), pref.getKey()));
-            }
-
-            if (ListPreference.class.isInstance(pref)) {
-                String prefString = pref.getKey();
-                ListPreference list = (ListPreference) findPreference(prefString);
-                String freq = Aware.getSetting(getApplicationContext(), prefString);
-                int entryIndex = list.findIndexOfValue(freq);
-                CharSequence entryString = list.getEntries()[entryIndex];
-                list.setSummary(entryString);
-            }
-
             if (PreferenceScreen.class.isInstance(getPreferenceParent(pref))) {
                 PreferenceScreen parent = (PreferenceScreen) getPreferenceParent(pref);
 
@@ -379,13 +399,13 @@ public class Settings_Page extends Aware_Activity {
                 ArrayList sensorStatuses = new ArrayList<String>();
                 for (int i = 0; i < children.getCount(); i++) {
                     Object obj = children.getItem(i);
+                    initializePreferenceValue((Preference) obj);
                     if (CheckBoxPreference.class.isInstance(obj)) {
                         CheckBoxPreference child = (CheckBoxPreference) obj;
                         if (child.getKey().contains("status_")) {
                             sensorStatuses.add(child.getKey());
                             if (child.isChecked()) {
                                 isActive = true;
-                                break;
                             }
                         }
                     }

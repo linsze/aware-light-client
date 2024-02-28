@@ -1,11 +1,11 @@
 package com.aware.utils;
 
-import static androidx.core.app.ActivityCompat.startActivityForResult;
 import static com.aware.ui.PermissionsHandler.ACTION_AWARE_PERMISSIONS_CHECK;
-import static com.aware.ui.PermissionsHandler.RC_PERMISSIONS;
-import static com.aware.ui.PermissionsHandler.SERVICE_FULL_PERMISSIONS_NOT_GRANTED;
-import static com.aware.ui.PermissionsHandler.SERVICE_NAME;
-import static com.aware.ui.PermissionsHandler.UNGRANTED_PERMISSIONS;
+import static com.aware.utils.PermissionUtils.MANDATORY_PERMISSIONS_GRANTED;
+import static com.aware.utils.PermissionUtils.SERVICE_FULL_PERMISSIONS_NOT_GRANTED;
+import static com.aware.utils.PermissionUtils.SERVICE_NAME;
+import static com.aware.utils.PermissionUtils.UNGRANTED_PERMISSIONS;
+import static com.aware.utils.PermissionUtils.resetPermissionStatuses;
 
 import android.Manifest;
 import android.app.Service;
@@ -14,11 +14,9 @@ import android.content.pm.PackageManager;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.IBinder;
-import android.text.TextUtils;
 import android.util.Log;
 
 import androidx.core.content.ContextCompat;
-import androidx.core.content.PermissionChecker;
 import com.aware.Aware;
 import com.aware.Aware_Preferences;
 import com.aware.ui.PermissionsHandler;
@@ -27,7 +25,6 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.util.ArrayList;
-import java.util.Arrays;
 
 /**
  * Aware_Sensor: Extend to integrate with the framework (extension of Android Service class).
@@ -95,6 +92,7 @@ public class Aware_Sensor extends Service {
 
         registerReceiver(contextBroadcaster, filter);
 
+        REQUIRED_PERMISSIONS = new ArrayList<>();
         REQUIRED_PERMISSIONS.add(Manifest.permission.WRITE_EXTERNAL_STORAGE);
         REQUIRED_PERMISSIONS.add(Manifest.permission.GET_ACCOUNTS);
         REQUIRED_PERMISSIONS.add(Manifest.permission.WRITE_SYNC_SETTINGS);
@@ -146,10 +144,14 @@ public class Aware_Sensor extends Service {
         // Send broadcast to activity to display a dialog
         if (!PERMISSIONS_OK) {
             if (intent != null && intent.getAction() != null && intent.getAction().equals(ACTION_AWARE_PERMISSIONS_CHECK)) {
+//                if (getClass().getName().contains("Scheduler")) {
                 Intent cantRunSchedulerIntent = new Intent(SERVICE_FULL_PERMISSIONS_NOT_GRANTED);
                 cantRunSchedulerIntent.putExtra(SERVICE_NAME, getClass().getName());
                 cantRunSchedulerIntent.putExtra(UNGRANTED_PERMISSIONS, PENDING_PERMISSIONS);
                 sendBroadcast(cantRunSchedulerIntent);
+//                } else {
+//                    addServiceToDeniedPermission(getApplicationContext(), getClass().getName(), PENDING_PERMISSIONS);
+//                }
                 stopSelf();
                 return START_NOT_STICKY;
             } else if (PENDING_PERMISSIONS.size() > 0) {
@@ -166,7 +168,10 @@ public class Aware_Sensor extends Service {
                     return START_NOT_STICKY;
                 }
             }
-        } else {
+        } else if (PERMISSIONS_OK && getClass().getName().contains("Scheduler")) {
+            // Broadcast to notify that mandatory permissions are granted so that main intent can be started
+            Intent mandatoryPermissionsGrantedIntent = new Intent(MANDATORY_PERMISSIONS_GRANTED);
+            sendBroadcast(mandatoryPermissionsGrantedIntent);
 //            if (Aware.getSetting(this, Aware_Preferences.STATUS_WEBSERVICE).equals("true") && Aware.getSetting(this, Aware_Preferences.WEBSERVICE_SERVER).contains("https")) {
 //                downloadCertificate(this);
 //            }
@@ -185,6 +190,9 @@ public class Aware_Sensor extends Service {
 
         //Unregister Context Broadcaster
         if (contextBroadcaster != null) unregisterReceiver(contextBroadcaster);
+
+        // Resets request status for additional permissions
+        resetPermissionStatuses(getApplicationContext(), PENDING_PERMISSIONS);
     }
 
     /**

@@ -736,5 +736,20 @@ public class Aware_Preferences {
      */
     public static final String STUDY_CONFIG_KEY = "study_config_key";
 
+    /**
+     * JSON object of statuses as of whether permissions have been requested to avoid duplicated requests
+     */
     public static final String PERMISSION_REQUEST_STATUSES = "permission_request_statuses";
+
+    /**
+     * Array of current services that have pending permission requests
+     * To manage whether to execute requests or ignore if the same set of permissions have been requested before/are pending
+     * E.g., scheduler may be triggered multiple times before the requests for permissions are executed
+     */
+    public static final String PENDING_PERMISSION_SERVICE_QUEUE = "pending_permission_service_queue";
+
+    /**
+     * JSON object of services (sensors and plugins) which the necessary additional permissions have been denied.
+     */
+    public static final String DENIED_PERMISSIONS_SERVICES = "denied_permissions_services";
 }

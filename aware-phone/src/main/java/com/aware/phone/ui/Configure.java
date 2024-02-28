@@ -1,8 +1,7 @@
 package com.aware.phone.ui;
 
-import static com.aware.ui.PermissionsHandler.SERVICE_FULL_PERMISSIONS_NOT_GRANTED;
-import static com.aware.ui.PermissionsHandler.SERVICE_NAME;
-import static com.aware.ui.PermissionsHandler.UNGRANTED_PERMISSIONS;
+import static com.aware.utils.PermissionUtils.MANDATORY_PERMISSIONS_GRANTED;
+import static com.aware.utils.PermissionUtils.SERVICE_FULL_PERMISSIONS_NOT_GRANTED;
 
 import android.app.Activity;
 import android.app.ProgressDialog;
@@ -28,7 +27,6 @@ import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
-import java.util.ArrayList;
 
 public class Configure extends Aware_Activity {
 
@@ -45,7 +43,13 @@ public class Configure extends Aware_Activity {
     private RecyclerView.Adapter permissionsAdapter;
     private RecyclerView.LayoutManager permissionsLayoutManager;
 
-    private final PermissionResultReceiver permissionResultReceiver = new PermissionResultReceiver();
+    private final PermissionUtils.ServicePermissionResultReceiver servicePermissionResultReceiver = new PermissionUtils.ServicePermissionResultReceiver(Configure.this);
+
+    private final MandatoryPermissionGrantedReceiver mandatoryPermissionGrantedReceiver = new MandatoryPermissionGrantedReceiver(Configure.this);
+
+    private static boolean mandatoryPermissionsGranted = false;
+
+    private static boolean isStudyValid = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -76,7 +80,11 @@ public class Configure extends Aware_Activity {
 
         IntentFilter permissionResults = new IntentFilter();
         permissionResults.addAction(SERVICE_FULL_PERMISSIONS_NOT_GRANTED);
-        registerReceiver(permissionResultReceiver, permissionResults);
+        registerReceiver(servicePermissionResultReceiver, permissionResults);
+
+        IntentFilter mandatoryPermissionsResults = new IntentFilter();
+        mandatoryPermissionsResults.addAction(MANDATORY_PERMISSIONS_GRANTED);
+        registerReceiver(mandatoryPermissionGrantedReceiver, mandatoryPermissionsResults);
 
         // Listen to changes in URL input
         EditText etStudyConfigUrl = findViewById(R.id.et_join_study_url);
@@ -137,6 +145,27 @@ public class Configure extends Aware_Activity {
         });
     }
 
+    /**
+     * Ensures that the main intent is only started after the link is verified and mandatory permissions are granted.
+     */
+    private class MandatoryPermissionGrantedReceiver extends BroadcastReceiver {
+        private Configure currentActivity;
+
+        public MandatoryPermissionGrantedReceiver(Configure activity) {
+            this.currentActivity = activity;
+        }
+
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            if (!currentActivity.mandatoryPermissionsGranted) {
+                currentActivity.mandatoryPermissionsGranted = true;
+                if (currentActivity.isStudyValid) {
+                    currentActivity.startMainIntent();
+                }
+            }
+        }
+    }
+
     @Override
     public void onSharedPreferenceChanged(SharedPreferences sharedPreferences, String s) {
         // Do nothing
@@ -145,7 +174,8 @@ public class Configure extends Aware_Activity {
     @Override
     protected void onDestroy() {
         super.onDestroy();
-        unregisterReceiver(permissionResultReceiver);
+        unregisterReceiver(servicePermissionResultReceiver);
+        unregisterReceiver(mandatoryPermissionGrantedReceiver);
     }
 
     private void populateStudyDetails(String studyURL, JSONObject studyConfig, String studyPassword, String studyAPI) {
@@ -210,6 +240,15 @@ public class Configure extends Aware_Activity {
 
         JSONArray configs = new JSONArray().put(studyConfig);
         StudyUtils.applySettings(getApplicationContext(), url, configs, password);
+    }
+
+    /**
+     * Triggers to start main intent
+     */
+    private void startMainIntent() {
+        Intent mainUI = new Intent(getApplicationContext(), Aware_Light_Client.class);
+        mainUI.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
+        startActivity(mainUI);
     }
 
     private class ValidateURL extends AsyncTask<String, Void, String> {
@@ -303,21 +342,10 @@ public class Configure extends Aware_Activity {
                 }
                 builder.show();
             } else {
-                Intent mainUI = new Intent(getApplicationContext(), Aware_Light_Client.class);
-                mainUI.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
-                startActivity(mainUI);
-            }
-        }
-    }
-
-    private class PermissionResultReceiver extends BroadcastReceiver {
-
-        @Override
-        public void onReceive(Context context, Intent intent) {
-            String serviceName = intent.getStringExtra(SERVICE_NAME);
-            ArrayList<String> pendingPermissions = intent.getStringArrayListExtra(UNGRANTED_PERMISSIONS);
-            if (!pendingPermissions.isEmpty()) {
-                new PermissionUtils.PermissionDialog(Configure.this, serviceName, pendingPermissions, true).showDialog();
+                isStudyValid = true;
+                if (mandatoryPermissionsGranted) {
+                    startMainIntent();
+                }
             }
         }
     }

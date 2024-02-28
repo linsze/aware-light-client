@@ -1,6 +1,11 @@
 
 package com.aware;
 
+import static com.aware.utils.PermissionUtils.PERMISSION_NAME;
+import static com.aware.utils.PermissionUtils.SERVICES_WITH_DENIED_PERMISSIONS;
+import static com.aware.utils.PermissionUtils.SERVICE_FULL_PERMISSIONS_NOT_GRANTED;
+import static com.aware.utils.PermissionUtils.UNGRANTED_PERMISSIONS;
+
 import android.Manifest;
 import android.accounts.Account;
 import android.accounts.AccountManager;
@@ -26,10 +31,12 @@ import android.os.*;
 import android.preference.PreferenceManager;
 import android.provider.Settings;
 import android.telephony.TelephonyManager;
+import android.text.TextUtils;
 import android.util.Log;
 import android.util.TypedValue;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.ArrayAdapter;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
@@ -209,6 +216,12 @@ public class Aware extends Service {
 
     private static AsyncStudyCheck studyCheck = null;
 
+    private static ArrayList<String> runningPlugins = new ArrayList<>();
+
+    public static final String PLUGIN_STATUS_UPDATE = "PLUGIN_STATUS_UPDATE";
+    public static String PLUGIN_NAME = "PLUGIN_NAME";
+    public static String PLUGIN_STATUS = "PLUGIN_STATUS";
+
     /**
      * Variable for the Doze ignore list
      */
@@ -260,6 +273,10 @@ public class Aware extends Service {
         scheduler.addAction(Intent.ACTION_TIME_TICK);
         schedulerTicker.interval_ms = 60000 * getApplicationContext().getResources().getInteger(R.integer.alarm_wakeup_interval_min);
         registerReceiver(schedulerTicker, scheduler);
+
+        IntentFilter pluginStatus = new IntentFilter();
+        pluginStatus.addAction(PLUGIN_STATUS_UPDATE);
+        registerReceiver(pluginStatusReceiver, pluginStatus);
 
         if (!Environment.getExternalStorageState().equals(Environment.MEDIA_MOUNTED)) {
             stopSelf();
@@ -779,18 +796,17 @@ public class Aware extends Service {
                 }
 
                 if (intent.getAction().equalsIgnoreCase(ACTION_AWARE_KEEP_ALIVE)) {
-                    startAWARE(getApplicationContext());
-                    startPlugins(getApplicationContext());
-                }
-
-                if (intent.getAction().equalsIgnoreCase(ACTION_AWARE_KEEP_ALIVE)) {
-                    startAWARE(getApplicationContext());
-                    startPlugins(getApplicationContext());
+                    if (!Aware.IS_CORE_RUNNING) {
+                        startAWARE(getApplicationContext());
+                        startPlugins(getApplicationContext());
+                    }
                 }
 
             } else {
-                startAWARE(getApplicationContext());
-                startPlugins(getApplicationContext());
+                if (!Aware.IS_CORE_RUNNING) {
+                    startAWARE(getApplicationContext());
+                    startPlugins(getApplicationContext());
+                }
             }
 
             if (Aware.isStudy(this)) {
@@ -1954,13 +1970,16 @@ public class Aware extends Service {
             unregisterReceiver(awareBoot);
             unregisterReceiver(foregroundMgr);
             unregisterReceiver(schedulerTicker);
+            unregisterReceiver(pluginStatusReceiver);
             unregisterComponentCallbacks((ComponentCallbacks) start_BR);
-        } catch (IllegalArgumentException e) {
+        } catch (IllegalArgumentException | ClassCastException e) {
             //There is no API to check if a broadcast receiver already is registered. Since Aware.java is shared across plugins, the receiver is only registered on the client, not the plugins.
+            //HACK: Do nothing for now
         }
     }
 
     public static void reset(Context context) {
+        IS_CORE_RUNNING = false;
         String device_id = Aware.getSetting(context, Aware_Preferences.DEVICE_ID);
         String device_label = Aware.getSetting(context, Aware_Preferences.DEVICE_LABEL);
 
@@ -2460,12 +2479,38 @@ public class Aware extends Service {
         }
     }
 
+    public static void displayDeniedPermissions(Context context) {
+        // Check to trigger handling for denied permissions all at once
+        String deniedPermissionsStr = Aware.getSetting(context, Aware_Preferences.DENIED_PERMISSIONS_SERVICES);
+        JSONObject deniedPermissions = new JSONObject();
+        try {
+            if (!deniedPermissionsStr.equals("")) {
+                deniedPermissions = new JSONObject(deniedPermissionsStr);
+                Iterator<String> permissions = deniedPermissions.keys();
+                while(permissions.hasNext()) {
+                    String currentPermission = permissions.next();
+                    ArrayList<String> services = new ArrayList<>(Arrays.asList(deniedPermissions.getString(currentPermission).split(",")));
+                    Intent permissionDeniedIntent = new Intent(SERVICES_WITH_DENIED_PERMISSIONS);
+                    permissionDeniedIntent.putExtra(PERMISSION_NAME, currentPermission);
+                    permissionDeniedIntent.putExtra(UNGRANTED_PERMISSIONS, services);
+                    context.sendBroadcast(permissionDeniedIntent);
+                }
+            }
+        } catch (JSONException e) {
+            e.printStackTrace();
+        }
+    }
+
     /**
      * Start core and active services
+     * NOTE: Updated to only start the services if they are not currently running (is null).
      */
     public static void startAWARE(Context context) {
 
         startScheduler(context);
+
+        // Reset the state of services with denied permissions before starting
+        Aware.setSetting(context, Aware_Preferences.DENIED_PERMISSIONS_SERVICES, "");
 
         if (Aware.getSetting(context, Aware_Preferences.STATUS_SIGNIFICANT_MOTION).equals("true")) {
             startSignificant(context);
@@ -2576,6 +2621,8 @@ public class Aware extends Service {
         if (Aware.getSetting(context, Aware_Preferences.STATUS_SCREENTEXT).equals("true")) {
             startScreenText(context);
         } else stopScreenText(context);
+
+        // displayDeniedPermissions(context);
     }
 
     public static void startPlugins(Context context) {
@@ -2594,7 +2641,9 @@ public class Aware extends Service {
 
                 if (active_plugins.size() > 0) {
                     for (String package_name : active_plugins) {
-                        startPlugin(context, package_name);
+                        if (!runningPlugins.contains(package_name)) {
+                            startPlugin(context, package_name);
+                        }
                     }
                 }
             }
@@ -2636,7 +2685,9 @@ public class Aware extends Service {
 
             if (active_plugins.size() > 0) {
                 for (String package_name : active_plugins) {
-                    stopPlugin(context, package_name);
+                    if (runningPlugins.contains(package_name)) {
+                        stopPlugin(context, package_name);
+                    }
                 }
             }
         }
@@ -2666,14 +2717,20 @@ public class Aware extends Service {
 
     /**
      * Stop all services
-     *
+     * NOTE: Updated to stop the services and reassign them to null (for local tracking whether to start later on if requested)
      * @param context
      */
     public static void stopAWARE(Context context) {
         if (context == null) return;
 
         // Check if the activity is finishing
-        boolean isFinishing = ((Activity) context).isFinishing();
+        boolean isFinishing;
+        try {
+            isFinishing = ((Activity) context).isFinishing();
+        } catch (ClassCastException e) {
+            //HACK: Error that application cannot be casted to activity
+            isFinishing = false;
+        }
 
         Intent aware = new Intent(context, Aware.class);
         context.stopService(aware);
@@ -2719,13 +2776,171 @@ public class Aware extends Service {
     }
 
     /**
+     * Used to start/stop a specific sensor based on corresponding preference key
+     * @param context current activity context
+     * @param preferenceKey preference key corresponding to the sensor
+     */
+    public static void activateSensorFromPreference(Context context, String preferenceKey) {
+        Boolean preferenceStatus = Aware.getSetting(context, preferenceKey).equals("true");
+        switch (preferenceKey) {
+            case (Aware_Preferences.STATUS_SIGNIFICANT_MOTION):
+                if (preferenceStatus) {
+                    startSignificant(context);
+                } else stopSignificant(context);
+                break;
+            case (Aware_Preferences.STATUS_ESM):
+                if (preferenceStatus) {
+                    startESM(context);
+                } else stopESM(context);
+                break;
+            case (Aware_Preferences.STATUS_ACCELEROMETER):
+                if (preferenceStatus) {
+                    startAccelerometer(context);
+                } else stopAccelerometer(context);
+                break;
+            case (Aware_Preferences.STATUS_INSTALLATIONS):
+                if (preferenceStatus) {
+                    startInstallations(context);
+                } else stopInstallations(context);
+                break;
+            case (Aware_Preferences.STATUS_LOCATION_GPS):
+            case (Aware_Preferences.STATUS_LOCATION_NETWORK):
+            case (Aware_Preferences.STATUS_LOCATION_PASSIVE):
+                //TODO: Deactivate specific setting but still enable the others
+//                preferenceStatus = (Aware.getSetting(context, Aware_Preferences.STATUS_LOCATION_GPS).equals("true")
+//                        || Aware.getSetting(context, Aware_Preferences.STATUS_LOCATION_NETWORK).equals("true")
+//                        || Aware.getSetting(context, Aware_Preferences.STATUS_LOCATION_PASSIVE).equals("true"));
+//                if (preferenceStatus) {
+//                    startLocations(context);
+//                } else stopLocations(context);
+                break;
+            case (Aware_Preferences.STATUS_BLUETOOTH):
+                if (preferenceStatus) {
+                    startBluetooth(context);
+                } else stopBluetooth(context);
+                break;
+            case (Aware_Preferences.STATUS_SCREEN):
+                if (preferenceStatus) {
+                    startScreen(context);
+                } else stopScreen(context);
+                break;
+            case (Aware_Preferences.STATUS_BATTERY):
+                if (preferenceStatus) {
+                    startBattery(context);
+                } else stopBattery(context);
+                break;
+            case (Aware_Preferences.STATUS_NETWORK_EVENTS):
+                if (preferenceStatus) {
+                    startNetwork(context);
+                } else stopNetwork(context);
+                break;
+            case (Aware_Preferences.STATUS_NETWORK_TRAFFIC):
+                if (preferenceStatus) {
+                    startTraffic(context);
+                } else stopTraffic(context);
+                break;
+            case (Aware_Preferences.STATUS_COMMUNICATION_EVENTS):
+            case (Aware_Preferences.STATUS_CALLS):
+            case (Aware_Preferences.STATUS_MESSAGES):
+                //TODO: Deactivate specific setting but still enable the others
+//                preferenceStatus = (Aware.getSetting(context, Aware_Preferences.STATUS_COMMUNICATION_EVENTS).equals("true") || Aware.getSetting(context, Aware_Preferences.STATUS_CALLS).equals("true") || Aware.getSetting(context, Aware_Preferences.STATUS_MESSAGES).equals("true"));
+//                if (preferenceStatus) {
+//                    startCommunication(context);
+//                } else stopCommunication(context);
+                break;
+            case (Aware_Preferences.STATUS_PROCESSOR):
+                if (preferenceStatus) {
+                    startProcessor(context);
+                } else stopProcessor(context);
+                break;
+            case (Aware_Preferences.STATUS_TIMEZONE):
+                if (preferenceStatus) {
+                    startTimeZone(context);
+                } else stopTimeZone(context);
+                break;
+            case (Aware_Preferences.STATUS_MQTT):
+                if (preferenceStatus) {
+                    startMQTT(context);
+                } else stopMQTT(context);
+                break;
+            case (Aware_Preferences.STATUS_GYROSCOPE):
+                if (preferenceStatus) {
+                    startGyroscope(context);
+                } else stopGyroscope(context);
+                break;
+            case (Aware_Preferences.STATUS_WIFI):
+                if (preferenceStatus) {
+                    startWiFi(context);
+                } else stopWiFi(context);
+                break;
+            case (Aware_Preferences.STATUS_TELEPHONY):
+                if (preferenceStatus) {
+                    startTelephony(context);
+                } else stopTelephony(context);
+                break;
+            case (Aware_Preferences.STATUS_ROTATION):
+                if (preferenceStatus) {
+                    startRotation(context);
+                } else stopRotation(context);
+                break;
+            case (Aware_Preferences.STATUS_LIGHT):
+                if (preferenceStatus) {
+                    startLight(context);
+                } else stopLight(context);
+                break;
+            case (Aware_Preferences.STATUS_PROXIMITY):
+                if (preferenceStatus) {
+                    startProximity(context);
+                } else stopProximity(context);
+                break;
+            case (Aware_Preferences.STATUS_MAGNETOMETER):
+                if (preferenceStatus) {
+                    startMagnetometer(context);
+                } else stopMagnetometer(context);
+                break;
+            case (Aware_Preferences.STATUS_BAROMETER):
+                if (preferenceStatus) {
+                    startBarometer(context);
+                } else stopBarometer(context);
+                break;
+            case (Aware_Preferences.STATUS_GRAVITY):
+                if (preferenceStatus) {
+                    startGravity(context);
+                } else stopGravity(context);
+                break;
+            case (Aware_Preferences.STATUS_LINEAR_ACCELEROMETER):
+                if (preferenceStatus) {
+                    startLinearAccelerometer(context);
+                } else stopLinearAccelerometer(context);
+                break;
+            case (Aware_Preferences.STATUS_TEMPERATURE):
+                if (preferenceStatus) {
+                    startTemperature(context);
+                } else stopTemperature(context);
+                break;
+            case (Aware_Preferences.STATUS_KEYBOARD):
+                if (preferenceStatus) {
+                    startKeyboard(context);
+                } else stopKeyboard(context);
+                break;
+            case (Aware_Preferences.STATUS_SCREENTEXT):
+                if (preferenceStatus) {
+                    startScreenText(context);
+                } else stopScreenText(context);
+                break;
+        }
+    }
+
+    /**
      * Start the significant motion service
      *
      * @param context
      */
     public static void startSignificant(Context context) {
         if (context == null) return;
-        if (significantSrv == null) significantSrv = new Intent(context, SignificantMotion.class);
+        if (significantSrv == null) {
+            significantSrv = new Intent(context, SignificantMotion.class);
+        }
         context.startService(significantSrv);
     }
 
@@ -2736,7 +2951,10 @@ public class Aware extends Service {
      */
     public static void stopSignificant(Context context) {
         if (context == null) return;
-        if (significantSrv != null) context.stopService(significantSrv);
+        if (significantSrv != null) {
+            context.stopService(significantSrv);
+            significantSrv = null;
+        }
     }
 
     /**
@@ -2746,7 +2964,9 @@ public class Aware extends Service {
      */
     public static void startScheduler(Context context) {
         if (context == null) return;
-        if (scheduler == null) scheduler = new Intent(context, Scheduler.class);
+        if (scheduler == null) {
+            scheduler = new Intent(context, Scheduler.class);
+        }
         context.startService(scheduler);
     }
 
@@ -2757,7 +2977,10 @@ public class Aware extends Service {
      */
     public static void stopScheduler(Context context) {
         if (context == null) return;
-        if (scheduler != null) context.stopService(scheduler);
+        if (scheduler != null) {
+            context.stopService(scheduler);
+            scheduler = null;
+        }
     }
 
     /**
@@ -2765,7 +2988,9 @@ public class Aware extends Service {
      */
     public static void startKeyboard(Context context) {
         if (context == null) return;
-        if (keyboard == null) keyboard = new Intent(context, Keyboard.class);
+        if (keyboard == null) {
+            keyboard = new Intent(context, Keyboard.class);
+        }
         context.startService(keyboard);
     }
 
@@ -2776,7 +3001,9 @@ public class Aware extends Service {
      */
     public static void startScreenText(Context context) {
         if (context == null) return;
-        if (screenTextSrv == null) screenTextSrv = new Intent(context, ScreenText.class);
+        if (screenTextSrv == null) {
+            screenTextSrv = new Intent(context, ScreenText.class);
+        }
         context.startService(screenTextSrv);
     }
 
@@ -2787,7 +3014,10 @@ public class Aware extends Service {
      */
     public static void stopScreenText(Context context) {
         if (context == null) return;
-        if (screenTextSrv != null) context.stopService(screenTextSrv);
+        if (screenTextSrv != null) {
+            context.stopService(screenTextSrv);
+            screenTextSrv = null;
+        }
     }
 
 
@@ -2796,7 +3026,10 @@ public class Aware extends Service {
      */
     public static void stopKeyboard(Context context) {
         if (context == null) return;
-        if (keyboard != null) context.stopService(keyboard);
+        if (keyboard != null) {
+            context.stopService(keyboard);
+            keyboard = null;
+        }
     }
 
     /**
@@ -2804,7 +3037,9 @@ public class Aware extends Service {
      */
     public static void startInstallations(Context context) {
         if (context == null) return;
-        if (installationsSrv == null) installationsSrv = new Intent(context, Installations.class);
+        if (installationsSrv == null) {
+            installationsSrv = new Intent(context, Installations.class);
+        }
         context.startService(installationsSrv);
     }
 
@@ -2813,7 +3048,10 @@ public class Aware extends Service {
      */
     public static void stopInstallations(Context context) {
         if (context == null) return;
-        if (installationsSrv != null) context.stopService(installationsSrv);
+        if (installationsSrv != null) {
+            context.stopService(installationsSrv);
+            installationsSrv = null;
+        }
     }
 
     /**
@@ -2821,7 +3059,9 @@ public class Aware extends Service {
      */
     public static void startESM(Context context) {
         if (context == null) return;
-        if (esmSrv == null) esmSrv = new Intent(context, ESM.class);
+        if (esmSrv == null) {
+            esmSrv = new Intent(context, ESM.class);
+        }
         context.startService(esmSrv);
     }
 
@@ -2830,7 +3070,10 @@ public class Aware extends Service {
      */
     public static void stopESM(Context context) {
         if (context == null) return;
-        if (esmSrv != null) context.stopService(esmSrv);
+        if (esmSrv != null) {
+            context.stopService(esmSrv);
+            esmSrv = null;
+        }
     }
 
     /**
@@ -2838,7 +3081,9 @@ public class Aware extends Service {
      */
     public static void startTemperature(Context context) {
         if (context == null) return;
-        if (temperatureSrv == null) temperatureSrv = new Intent(context, Temperature.class);
+        if (temperatureSrv == null) {
+            temperatureSrv = new Intent(context, Temperature.class);
+        }
         context.startService(temperatureSrv);
     }
 
@@ -2847,7 +3092,10 @@ public class Aware extends Service {
      */
     public static void stopTemperature(Context context) {
         if (context == null) return;
-        if (temperatureSrv != null) context.stopService(temperatureSrv);
+        if (temperatureSrv != null) {
+            context.stopService(temperatureSrv);
+            temperatureSrv = null;
+        }
     }
 
     /**
@@ -2855,8 +3103,9 @@ public class Aware extends Service {
      */
     public static void startLinearAccelerometer(Context context) {
         if (context == null) return;
-        if (linear_accelSrv == null)
+        if (linear_accelSrv == null) {
             linear_accelSrv = new Intent(context, LinearAccelerometer.class);
+        }
         context.startService(linear_accelSrv);
     }
 
@@ -2865,7 +3114,10 @@ public class Aware extends Service {
      */
     public static void stopLinearAccelerometer(Context context) {
         if (context == null) return;
-        if (linear_accelSrv != null) context.stopService(linear_accelSrv);
+        if (linear_accelSrv != null) {
+            context.stopService(linear_accelSrv);
+            linear_accelSrv = null;
+        }
     }
 
     /**
@@ -2873,7 +3125,9 @@ public class Aware extends Service {
      */
     public static void startGravity(Context context) {
         if (context == null) return;
-        if (gravitySrv == null) gravitySrv = new Intent(context, Gravity.class);
+        if (gravitySrv == null) {
+            gravitySrv = new Intent(context, Gravity.class);
+        }
         context.startService(gravitySrv);
     }
 
@@ -2882,7 +3136,10 @@ public class Aware extends Service {
      */
     public static void stopGravity(Context context) {
         if (context == null) return;
-        if (gravitySrv != null) context.stopService(gravitySrv);
+        if (gravitySrv != null) {
+            context.stopService(gravitySrv);
+            gravitySrv = null;
+        }
     }
 
     /**
@@ -2890,7 +3147,9 @@ public class Aware extends Service {
      */
     public static void startBarometer(Context context) {
         if (context == null) return;
-        if (barometerSrv == null) barometerSrv = new Intent(context, Barometer.class);
+        if (barometerSrv == null) {
+            barometerSrv = new Intent(context, Barometer.class);
+        }
         context.startService(barometerSrv);
     }
 
@@ -2899,7 +3158,10 @@ public class Aware extends Service {
      */
     public static void stopBarometer(Context context) {
         if (context == null) return;
-        if (barometerSrv != null) context.stopService(barometerSrv);
+        if (barometerSrv != null) {
+            context.stopService(barometerSrv);
+            barometerSrv = null;
+        }
     }
 
     /**
@@ -2907,7 +3169,9 @@ public class Aware extends Service {
      */
     public static void startMagnetometer(Context context) {
         if (context == null) return;
-        if (magnetoSrv == null) magnetoSrv = new Intent(context, Magnetometer.class);
+        if (magnetoSrv == null) {
+            magnetoSrv = new Intent(context, Magnetometer.class);
+        }
         context.startService(magnetoSrv);
     }
 
@@ -2916,7 +3180,10 @@ public class Aware extends Service {
      */
     public static void stopMagnetometer(Context context) {
         if (context == null) return;
-        if (magnetoSrv != null) context.stopService(magnetoSrv);
+        if (magnetoSrv != null) {
+            context.stopService(magnetoSrv);
+            magnetoSrv = null;
+        }
     }
 
     /**
@@ -2924,7 +3191,9 @@ public class Aware extends Service {
      */
     public static void startProximity(Context context) {
         if (context == null) return;
-        if (proximitySrv == null) proximitySrv = new Intent(context, Proximity.class);
+        if (proximitySrv == null) {
+            proximitySrv = new Intent(context, Proximity.class);
+        }
         context.startService(proximitySrv);
     }
 
@@ -2933,7 +3202,10 @@ public class Aware extends Service {
      */
     public static void stopProximity(Context context) {
         if (context == null) return;
-        if (proximitySrv != null) context.stopService(proximitySrv);
+        if (proximitySrv != null) {
+            context.stopService(proximitySrv);
+            proximitySrv = null;
+        }
     }
 
     /**
@@ -2941,7 +3213,9 @@ public class Aware extends Service {
      */
     public static void startLight(Context context) {
         if (context == null) return;
-        if (lightSrv == null) lightSrv = new Intent(context, Light.class);
+        if (lightSrv == null) {
+            lightSrv = new Intent(context, Light.class);
+        }
         context.startService(lightSrv);
     }
 
@@ -2950,7 +3224,10 @@ public class Aware extends Service {
      */
     public static void stopLight(Context context) {
         if (context == null) return;
-        if (lightSrv != null) context.stopService(lightSrv);
+        if (lightSrv != null) {
+            context.stopService(lightSrv);
+            lightSrv = null;
+        }
     }
 
     /**
@@ -2958,7 +3235,9 @@ public class Aware extends Service {
      */
     public static void startRotation(Context context) {
         if (context == null) return;
-        if (rotationSrv == null) rotationSrv = new Intent(context, Rotation.class);
+        if (rotationSrv == null) {
+            rotationSrv = new Intent(context, Rotation.class);
+        }
         context.startService(rotationSrv);
     }
 
@@ -2967,7 +3246,10 @@ public class Aware extends Service {
      */
     public static void stopRotation(Context context) {
         if (context == null) return;
-        if (rotationSrv != null) context.stopService(rotationSrv);
+        if (rotationSrv != null) {
+            context.stopService(rotationSrv);
+            rotationSrv = null;
+        }
     }
 
     /**
@@ -2975,7 +3257,9 @@ public class Aware extends Service {
      */
     public static void startTelephony(Context context) {
         if (context == null) return;
-        if (telephonySrv == null) telephonySrv = new Intent(context, Telephony.class);
+        if (telephonySrv == null) {
+            telephonySrv = new Intent(context, Telephony.class);
+        }
         context.startService(telephonySrv);
     }
 
@@ -2984,7 +3268,10 @@ public class Aware extends Service {
      */
     public static void stopTelephony(Context context) {
         if (context == null) return;
-        if (telephonySrv != null) context.stopService(telephonySrv);
+        if (telephonySrv != null) {
+            context.stopService(telephonySrv);
+            telephonySrv = null;
+        }
     }
 
     /**
@@ -2992,13 +3279,18 @@ public class Aware extends Service {
      */
     public static void startWiFi(Context context) {
         if (context == null) return;
-        if (wifiSrv == null) wifiSrv = new Intent(context, WiFi.class);
+        if (wifiSrv == null) {
+            wifiSrv = new Intent(context, WiFi.class);
+        }
         context.startService(wifiSrv);
     }
 
     public static void stopWiFi(Context context) {
         if (context == null) return;
-        if (wifiSrv != null) context.stopService(wifiSrv);
+        if (wifiSrv != null) {
+            context.stopService(wifiSrv);
+            wifiSrv = null;
+        }
     }
 
     /**
@@ -3006,7 +3298,9 @@ public class Aware extends Service {
      */
     public static void startGyroscope(Context context) {
         if (context == null) return;
-        if (gyroSrv == null) gyroSrv = new Intent(context, Gyroscope.class);
+        if (gyroSrv == null) {
+            gyroSrv = new Intent(context, Gyroscope.class);
+        }
         context.startService(gyroSrv);
     }
 
@@ -3015,7 +3309,10 @@ public class Aware extends Service {
      */
     public static void stopGyroscope(Context context) {
         if (context == null) return;
-        if (gyroSrv != null) context.stopService(gyroSrv);
+        if (gyroSrv != null) {
+            context.stopService(gyroSrv);
+            gyroSrv = null;
+        }
     }
 
     /**
@@ -3023,7 +3320,9 @@ public class Aware extends Service {
      */
     public static void startAccelerometer(Context context) {
         if (context == null) return;
-        if (accelerometerSrv == null) accelerometerSrv = new Intent(context, Accelerometer.class);
+        if (accelerometerSrv == null) {
+            accelerometerSrv = new Intent(context, Accelerometer.class);
+        }
         context.startService(accelerometerSrv);
     }
 
@@ -3032,7 +3331,10 @@ public class Aware extends Service {
      */
     public static void stopAccelerometer(Context context) {
         if (context == null) return;
-        if (accelerometerSrv != null) context.stopService(accelerometerSrv);
+        if (accelerometerSrv != null) {
+            context.stopService(accelerometerSrv);
+            accelerometerSrv = null;
+        }
     }
 
     /**
@@ -3040,7 +3342,9 @@ public class Aware extends Service {
      */
     public static void startProcessor(Context context) {
         if (context == null) return;
-        if (processorSrv == null) processorSrv = new Intent(context, Processor.class);
+        if (processorSrv == null) {
+            processorSrv = new Intent(context, Processor.class);
+        }
         context.startService(processorSrv);
     }
 
@@ -3049,7 +3353,10 @@ public class Aware extends Service {
      */
     public static void stopProcessor(Context context) {
         if (context == null) return;
-        if (processorSrv != null) context.stopService(processorSrv);
+        if (processorSrv != null) {
+            context.stopService(processorSrv);
+            processorSrv = null;
+        }
     }
 
     /**
@@ -3057,7 +3364,9 @@ public class Aware extends Service {
      */
     public static void startLocations(Context context) {
         if (context == null) return;
-        if (locationsSrv == null) locationsSrv = new Intent(context, Locations.class);
+        if (locationsSrv == null) {
+            locationsSrv = new Intent(context, Locations.class);
+        }
         context.startService(locationsSrv);
     }
 
@@ -3069,7 +3378,10 @@ public class Aware extends Service {
         if (!Aware.getSetting(context, Aware_Preferences.STATUS_LOCATION_GPS).equals("true")
                 && !Aware.getSetting(context, Aware_Preferences.STATUS_LOCATION_NETWORK).equals("true")
                 && !Aware.getSetting(context, Aware_Preferences.STATUS_LOCATION_PASSIVE).equals("true")) {
-            if (locationsSrv != null) context.stopService(locationsSrv);
+            if (locationsSrv != null) {
+                context.stopService(locationsSrv);
+                locationsSrv = null;
+            }
         }
     }
 
@@ -3078,7 +3390,9 @@ public class Aware extends Service {
      */
     public static void startBluetooth(Context context) {
         if (context == null) return;
-        if (bluetoothSrv == null) bluetoothSrv = new Intent(context, Bluetooth.class);
+        if (bluetoothSrv == null) {
+            bluetoothSrv = new Intent(context, Bluetooth.class);
+        }
         context.startService(bluetoothSrv);
     }
 
@@ -3087,7 +3401,10 @@ public class Aware extends Service {
      */
     public static void stopBluetooth(Context context) {
         if (context == null) return;
-        if (bluetoothSrv != null) context.stopService(bluetoothSrv);
+        if (bluetoothSrv != null) {
+            context.stopService(bluetoothSrv);
+            bluetoothSrv = null;
+        }
     }
 
     /**
@@ -3095,7 +3412,9 @@ public class Aware extends Service {
      */
     public static void startScreen(Context context) {
         if (context == null) return;
-        if (screenSrv == null) screenSrv = new Intent(context, Screen.class);
+        if (screenSrv == null) {
+            screenSrv = new Intent(context, Screen.class);
+        }
         context.startService(screenSrv);
     }
 
@@ -3104,7 +3423,10 @@ public class Aware extends Service {
      */
     public static void stopScreen(Context context) {
         if (context == null) return;
-        if (screenSrv != null) context.stopService(screenSrv);
+        if (screenSrv != null) {
+            context.stopService(screenSrv);
+            screenSrv = null;
+        }
     }
 
     /**
@@ -3112,7 +3434,9 @@ public class Aware extends Service {
      */
     public static void startBattery(Context context) {
         if (context == null) return;
-        if (batterySrv == null) batterySrv = new Intent(context, Battery.class);
+        if (batterySrv == null) {
+            batterySrv = new Intent(context, Battery.class);
+        }
         context.startService(batterySrv);
     }
 
@@ -3121,7 +3445,10 @@ public class Aware extends Service {
      */
     public static void stopBattery(Context context) {
         if (context == null) return;
-        if (batterySrv != null) context.stopService(batterySrv);
+        if (batterySrv != null) {
+            context.stopService(batterySrv);
+            batterySrv = null;
+        }
     }
 
     /**
@@ -3129,7 +3456,9 @@ public class Aware extends Service {
      */
     public static void startNetwork(Context context) {
         if (context == null) return;
-        if (networkSrv == null) networkSrv = new Intent(context, Network.class);
+        if (networkSrv == null) {
+            networkSrv = new Intent(context, Network.class);
+        }
         context.startService(networkSrv);
     }
 
@@ -3138,7 +3467,10 @@ public class Aware extends Service {
      */
     public static void stopNetwork(Context context) {
         if (context == null) return;
-        if (networkSrv != null) context.stopService(networkSrv);
+        if (networkSrv != null) {
+            context.stopService(networkSrv);
+            networkSrv = null;
+        }
     }
 
     /**
@@ -3146,7 +3478,9 @@ public class Aware extends Service {
      */
     public static void startTraffic(Context context) {
         if (context == null) return;
-        if (trafficSrv == null) trafficSrv = new Intent(context, Traffic.class);
+        if (trafficSrv == null) {
+            trafficSrv = new Intent(context, Traffic.class);
+        }
         context.startService(trafficSrv);
     }
 
@@ -3155,7 +3489,10 @@ public class Aware extends Service {
      */
     public static void stopTraffic(Context context) {
         if (context == null) return;
-        if (trafficSrv != null) context.stopService(trafficSrv);
+        if (trafficSrv != null) {
+            context.stopService(trafficSrv);
+            trafficSrv = null;
+        }
     }
 
     /**
@@ -3163,7 +3500,9 @@ public class Aware extends Service {
      */
     public static void startTimeZone(Context context) {
         if (context == null) return;
-        if (timeZoneSrv == null) timeZoneSrv = new Intent(context, Timezone.class);
+        if (timeZoneSrv == null) {
+            timeZoneSrv = new Intent(context, Timezone.class);
+        }
         context.startService(timeZoneSrv);
     }
 
@@ -3172,7 +3511,10 @@ public class Aware extends Service {
      */
     public static void stopTimeZone(Context context) {
         if (context == null) return;
-        if (timeZoneSrv != null) context.stopService(timeZoneSrv);
+        if (timeZoneSrv != null) {
+            context.stopService(timeZoneSrv);
+            timeZoneSrv = null;
+        }
     }
 
     /**
@@ -3180,7 +3522,9 @@ public class Aware extends Service {
      */
     public static void startCommunication(Context context) {
         if (context == null) return;
-        if (communicationSrv == null) communicationSrv = new Intent(context, Communication.class);
+        if (communicationSrv == null) {
+            communicationSrv = new Intent(context, Communication.class);
+        }
         context.startService(communicationSrv);
     }
 
@@ -3192,7 +3536,10 @@ public class Aware extends Service {
         if (!Aware.getSetting(context, Aware_Preferences.STATUS_COMMUNICATION_EVENTS).equals("true")
                 && !Aware.getSetting(context, Aware_Preferences.STATUS_CALLS).equals("true")
                 && !Aware.getSetting(context, Aware_Preferences.STATUS_MESSAGES).equals("true")) {
-            if (communicationSrv != null) context.stopService(communicationSrv);
+            if (communicationSrv != null) {
+                context.stopService(communicationSrv);
+                communicationSrv = null;
+            }
         }
     }
 
@@ -3201,7 +3548,9 @@ public class Aware extends Service {
      */
     public static void startMQTT(Context context) {
         if (context == null) return;
-        if (mqttSrv == null) mqttSrv = new Intent(context, Mqtt.class);
+        if (mqttSrv == null) {
+            mqttSrv = new Intent(context, Mqtt.class);
+        }
         context.startService(mqttSrv);
     }
 
@@ -3210,6 +3559,26 @@ public class Aware extends Service {
      */
     public static void stopMQTT(Context context) {
         if (context == null) return;
-        if (mqttSrv != null) context.stopService(mqttSrv);
+        if (mqttSrv != null) {
+            context.stopService(mqttSrv);
+            mqttSrv = null;
+        }
+    }
+
+    private final PluginStatusReceiver pluginStatusReceiver = new PluginStatusReceiver();
+
+    public class PluginStatusReceiver extends BroadcastReceiver {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            String plugin = intent.getStringExtra(PLUGIN_NAME);
+            Boolean pluginStatus = intent.getBooleanExtra(PLUGIN_STATUS, false);
+            if (pluginStatus) {
+                if (!runningPlugins.contains(plugin)) {
+                    runningPlugins.add(plugin);
+                }
+            } else if (runningPlugins.contains(plugin)) {
+                runningPlugins.remove(plugin);
+            }
+        }
     }
 }

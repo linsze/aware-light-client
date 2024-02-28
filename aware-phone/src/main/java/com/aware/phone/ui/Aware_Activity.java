@@ -1,6 +1,6 @@
 package com.aware.phone.ui;
 
-import static com.aware.ui.PermissionsHandler.SERVICE_FULL_PERMISSIONS_NOT_GRANTED;
+import static com.aware.utils.PermissionUtils.SERVICE_FULL_PERMISSIONS_NOT_GRANTED;
 
 import android.Manifest;
 import android.content.Intent;
@@ -22,14 +22,14 @@ import com.google.android.material.bottomnavigation.BottomNavigationView;
 import java.util.ArrayList;
 
 public abstract class Aware_Activity extends AppCompatPreferenceActivity {
-    private static PermissionUtils.PermissionResultReceiver permissionResultReceiver;
+    private static PermissionUtils.ServicePermissionResultReceiver servicePermissionResultReceiver;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         IntentFilter permissionResults = new IntentFilter();
         permissionResults.addAction(SERVICE_FULL_PERMISSIONS_NOT_GRANTED);
-        registerReceiver(permissionResultReceiver, permissionResults);
+        registerReceiver(servicePermissionResultReceiver, permissionResults);
     }
 
     @Override

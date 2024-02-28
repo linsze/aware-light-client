@@ -2,9 +2,10 @@
 package com.aware.utils;
 
 import static com.aware.ui.PermissionsHandler.ACTION_AWARE_PERMISSIONS_CHECK;
-import static com.aware.ui.PermissionsHandler.SERVICE_FULL_PERMISSIONS_NOT_GRANTED;
-import static com.aware.ui.PermissionsHandler.SERVICE_NAME;
-import static com.aware.ui.PermissionsHandler.UNGRANTED_PERMISSIONS;
+import static com.aware.utils.PermissionUtils.SERVICE_FULL_PERMISSIONS_NOT_GRANTED;
+import static com.aware.utils.PermissionUtils.SERVICE_NAME;
+import static com.aware.utils.PermissionUtils.UNGRANTED_PERMISSIONS;
+import static com.aware.utils.PermissionUtils.resetPermissionStatuses;
 
 import android.Manifest;
 import android.app.Service;
@@ -96,6 +97,7 @@ public class Aware_Plugin extends Service {
 
         registerReceiver(contextBroadcaster, filter);
 
+        REQUIRED_PERMISSIONS = new ArrayList<>();
         REQUIRED_PERMISSIONS.add(Manifest.permission.WRITE_EXTERNAL_STORAGE);
         REQUIRED_PERMISSIONS.add(Manifest.permission.GET_ACCOUNTS);
         REQUIRED_PERMISSIONS.add(Manifest.permission.WRITE_SYNC_SETTINGS);
@@ -153,6 +155,7 @@ public class Aware_Plugin extends Service {
                 cantStartPluginIntent.putExtra(UNGRANTED_PERMISSIONS, PENDING_PERMISSIONS);
                 sendBroadcast(cantStartPluginIntent);
                 stopSelf();
+                return START_NOT_STICKY;
             } else if (PENDING_PERMISSIONS.size() > 0) {
                 if (PermissionUtils.checkPermissionServiceQueue(getApplicationContext(), getClass().getName())) {
                     Intent permissions = new Intent(this, PermissionsHandler.class);
@@ -162,9 +165,11 @@ public class Aware_Plugin extends Service {
                     permissions.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
                     permissions.putExtra(PermissionsHandler.EXTRA_REDIRECT_SERVICE, getApplicationContext().getPackageName() + "/" + getClass().getName()); //restarts plugin once permissions are accepted
                     startActivity(permissions);
+                } else {
+                    stopSelf();
+                    return START_NOT_STICKY;
                 }
             }
-            return START_NOT_STICKY;
         } else if (PERMISSIONS_OK) {
             Intent pluginActiveIntent = new Intent();
             pluginActiveIntent.setAction(Aware.PLUGIN_STATUS_UPDATE);
@@ -204,6 +209,23 @@ public class Aware_Plugin extends Service {
         pluginInactiveIntent.putExtra(Aware.PLUGIN_NAME, getClass().getName());
         pluginInactiveIntent.putExtra(Aware.PLUGIN_STATUS, false);
         sendBroadcast(pluginInactiveIntent);
+
+        resetPermissionStatuses(getApplicationContext(), PENDING_PERMISSIONS);
+    }
+
+    /**
+     * Attempts to parse integer preference entry, resets to default value if the entry is invalid.
+     * @param prefString key of preference entry
+     * @param defaultValue default preference value for resetting
+     */
+    public static void tryParseIntPreference(Context context, String prefString, int defaultValue) {
+        try {
+            String freq = Aware.getSetting(context, prefString);
+            int freqInt = Integer.parseInt(freq);
+            Aware.setSetting(context, prefString, freqInt);
+        } catch (NumberFormatException e) {
+            Aware.setSetting(context, prefString, defaultValue);
+        }
     }
 
     /**

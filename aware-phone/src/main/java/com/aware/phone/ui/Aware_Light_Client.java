@@ -44,7 +44,7 @@ import androidx.core.content.PermissionChecker;
 import static com.aware.Aware.AWARE_NOTIFICATION_IMPORTANCE_GENERAL;
 import static com.aware.Aware.TAG;
 import static com.aware.Aware.setNotificationProperties;
-import static com.aware.ui.PermissionsHandler.SERVICE_FULL_PERMISSIONS_NOT_GRANTED;
+import static com.aware.utils.PermissionUtils.SERVICE_FULL_PERMISSIONS_NOT_GRANTED;
 
 /**
  * Main page (Home) that provides the study description and navigation instructions.
@@ -60,7 +60,7 @@ public class Aware_Light_Client extends Aware_Activity {
 
     private final Aware.AndroidPackageMonitor packageMonitor = new Aware.AndroidPackageMonitor();
 
-    private final PermissionUtils.PermissionResultReceiver permissionResultReceiver = new PermissionUtils.PermissionResultReceiver(Aware_Light_Client.this);
+    private final PermissionUtils.ServicePermissionResultReceiver servicePermissionResultReceiver = new PermissionUtils.ServicePermissionResultReceiver(Aware_Light_Client.this);
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -150,7 +150,7 @@ public class Aware_Light_Client extends Aware_Activity {
 
         IntentFilter permissionResults = new IntentFilter();
         permissionResults.addAction(SERVICE_FULL_PERMISSIONS_NOT_GRANTED);
-        registerReceiver(permissionResultReceiver, permissionResults);
+        registerReceiver(servicePermissionResultReceiver, permissionResults);
     }
 
     @Override
@@ -297,7 +297,7 @@ public class Aware_Light_Client extends Aware_Activity {
         Log.d("AWARE-Light_Client", "AWARE-Light interface cleaned from the list of frequently used apps");
         super.onDestroy();
         unregisterReceiver(packageMonitor);
-        unregisterReceiver(permissionResultReceiver);
+        unregisterReceiver(servicePermissionResultReceiver);
     }
 
     private void hideUnusedPreferences() {

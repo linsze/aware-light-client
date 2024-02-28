@@ -1,11 +1,13 @@
 package com.aware.ui;
 
+import static com.aware.utils.PermissionUtils.SERVICE_NAME;
+import static com.aware.utils.PermissionUtils.UNGRANTED_PERMISSIONS;
+
 import android.app.Activity;
 import android.content.ComponentName;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.os.Bundle;
-import android.text.TextUtils;
 import android.util.Log;
 import androidx.core.app.ActivityCompat;
 import com.aware.Aware;
@@ -16,7 +18,6 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.util.ArrayList;
-import java.util.Arrays;
 
 /**
  * This is an invisible activity used to request the needed permissions from the user from API 23 onwards.
@@ -45,14 +46,6 @@ public class PermissionsHandler extends Activity {
      * Used on redirect service to know when permissions have been accepted
      */
     public static final String ACTION_AWARE_PERMISSIONS_CHECK = "ACTION_AWARE_PERMISSIONS_CHECK";
-
-    /**
-     * Used to trigger a dialog that necessary permissions for a specific service are not fully granted
-     */
-    public static final String SERVICE_FULL_PERMISSIONS_NOT_GRANTED = "SERVICE_FULL_PERMISSIONS_NOT_GRANTED";
-
-    public static final String SERVICE_NAME = "service_name";
-    public static String UNGRANTED_PERMISSIONS = "ungranted_permissions";
 
     /**
      * The request code for the permissions
