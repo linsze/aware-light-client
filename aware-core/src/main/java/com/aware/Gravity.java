@@ -286,13 +286,8 @@ public class Gravity extends Aware_Sensor implements SensorEventListener {
                 Aware.setSetting(this, Aware_Preferences.STATUS_GRAVITY, true);
                 saveSensorDevice(mGravity);
 
-                if (Aware.getSetting(this, Aware_Preferences.FREQUENCY_GRAVITY).length() == 0) {
-                    Aware.setSetting(this, Aware_Preferences.FREQUENCY_GRAVITY, 200000);
-                }
-
-                if (Aware.getSetting(this, Aware_Preferences.THRESHOLD_GRAVITY).length() == 0) {
-                    Aware.setSetting(this, Aware_Preferences.THRESHOLD_GRAVITY, 0.0);
-                }
+                tryParseIntPreference(Aware_Preferences.FREQUENCY_GRAVITY, 200000);
+                tryParseDoublePreference(Aware_Preferences.THRESHOLD_GRAVITY, 0.0);
 
                 int new_frequency = Integer.parseInt(Aware.getSetting(getApplicationContext(), Aware_Preferences.FREQUENCY_GRAVITY));
                 double new_threshold = Double.parseDouble(Aware.getSetting(getApplicationContext(), Aware_Preferences.THRESHOLD_GRAVITY));
@@ -332,8 +327,10 @@ public class Gravity extends Aware_Sensor implements SensorEventListener {
                     ContentResolver.requestSync(request);
                 }
             }
+        } else {
+            stopSelf();
+            return START_NOT_STICKY;
         }
-
         return START_STICKY;
     }
 

@@ -249,13 +249,9 @@ public class Barometer extends Aware_Sensor implements SensorEventListener {
                 Aware.setSetting(getApplicationContext(), Aware_Preferences.STATUS_BAROMETER, true);
                 saveSensorDevice(mPressure);
 
-                if (Aware.getSetting(this, Aware_Preferences.FREQUENCY_BAROMETER).length() == 0) {
-                    Aware.setSetting(this, Aware_Preferences.FREQUENCY_BAROMETER, 200000);
-                }
+                tryParseIntPreference(Aware_Preferences.FREQUENCY_BAROMETER, 200000);
+                tryParseDoublePreference(Aware_Preferences.THRESHOLD_BAROMETER, 0.0);
 
-                if (Aware.getSetting(this, Aware_Preferences.THRESHOLD_BAROMETER).length() == 0) {
-                    Aware.setSetting(this, Aware_Preferences.THRESHOLD_BAROMETER, 0.0);
-                }
 
                 int new_frequency = Integer.parseInt(Aware.getSetting(getApplicationContext(), Aware_Preferences.FREQUENCY_BAROMETER));
                 double new_threshold = Double.parseDouble(Aware.getSetting(getApplicationContext(), Aware_Preferences.THRESHOLD_BAROMETER));
@@ -295,8 +291,10 @@ public class Barometer extends Aware_Sensor implements SensorEventListener {
                     ContentResolver.requestSync(request);
                 }
             }
+        } else {
+            stopSelf();
+            return START_NOT_STICKY;
         }
-
         return START_STICKY;
     }
 

@@ -203,8 +203,10 @@ public class Traffic extends Aware_Sensor {
                     ContentResolver.requestSync(request);
                 }
             }
+        } else {
+            stopSelf();
+            return START_NOT_STICKY;
         }
-
         return START_STICKY;
     }
 

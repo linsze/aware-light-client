@@ -262,14 +262,9 @@ public class Magnetometer extends Aware_Sensor implements SensorEventListener {
                 Aware.setSetting(this, Aware_Preferences.STATUS_MAGNETOMETER, true);
                 saveSensorDevice(mMagnetometer);
 
-                if (Aware.getSetting(this, Aware_Preferences.FREQUENCY_MAGNETOMETER).length() == 0) {
-                    Aware.setSetting(this, Aware_Preferences.FREQUENCY_MAGNETOMETER, 200000);
-                }
-
-                if (Aware.getSetting(this, Aware_Preferences.THRESHOLD_MAGNETOMETER).length() == 0) {
-                    Aware.setSetting(this, Aware_Preferences.THRESHOLD_MAGNETOMETER, 0.0);
-                }
-
+                tryParseIntPreference(Aware_Preferences.FREQUENCY_MAGNETOMETER, 200000);
+                tryParseDoublePreference(Aware_Preferences.THRESHOLD_MAGNETOMETER, 0.0);
+                
                 int new_frequency = Integer.parseInt(Aware.getSetting(getApplicationContext(), Aware_Preferences.FREQUENCY_MAGNETOMETER));
                 double new_threshold = Double.parseDouble(Aware.getSetting(getApplicationContext(), Aware_Preferences.THRESHOLD_MAGNETOMETER));
                 boolean new_enforce_frequency = (Aware.getSetting(getApplicationContext(), Aware_Preferences.FREQUENCY_MAGNETOMETER_ENFORCE).equals("true")
@@ -308,8 +303,10 @@ public class Magnetometer extends Aware_Sensor implements SensorEventListener {
                     ContentResolver.requestSync(request);
                 }
             }
+        } else {
+            stopSelf();
+            return START_NOT_STICKY;
         }
-
         return START_STICKY;
     }
 

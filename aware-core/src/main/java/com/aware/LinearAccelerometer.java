@@ -284,13 +284,8 @@ public class LinearAccelerometer extends Aware_Sensor implements SensorEventList
                 saveAccelerometerDevice(mLinearAccelerator);
                 Aware.setSetting(this, Aware_Preferences.STATUS_LINEAR_ACCELEROMETER, true);
 
-                if (Aware.getSetting(this, Aware_Preferences.FREQUENCY_LINEAR_ACCELEROMETER).length() == 0) {
-                    Aware.setSetting(this, Aware_Preferences.FREQUENCY_LINEAR_ACCELEROMETER, 200000);
-                }
-
-                if (Aware.getSetting(this, Aware_Preferences.THRESHOLD_LINEAR_ACCELEROMETER).length() == 0) {
-                    Aware.setSetting(this, Aware_Preferences.THRESHOLD_LINEAR_ACCELEROMETER, 0.0);
-                }
+                tryParseIntPreference(Aware_Preferences.FREQUENCY_LINEAR_ACCELEROMETER, 200000);
+                tryParseDoublePreference(Aware_Preferences.THRESHOLD_LINEAR_ACCELEROMETER, 0.0);
 
                 int new_frequency = Integer.parseInt(Aware.getSetting(getApplicationContext(), Aware_Preferences.FREQUENCY_LINEAR_ACCELEROMETER));
                 double new_threshold = Double.parseDouble(Aware.getSetting(getApplicationContext(), Aware_Preferences.THRESHOLD_LINEAR_ACCELEROMETER));
@@ -331,8 +326,10 @@ public class LinearAccelerometer extends Aware_Sensor implements SensorEventList
                     ContentResolver.requestSync(request);
                 }
             }
+        } else {
+            stopSelf();
+            return START_NOT_STICKY;
         }
-
         return START_STICKY;
     }
 

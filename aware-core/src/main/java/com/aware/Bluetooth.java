@@ -30,6 +30,7 @@ import com.aware.providers.Bluetooth_Provider.Bluetooth_Sensor;
 import com.aware.utils.Aware_Sensor;
 import com.aware.utils.Encrypter;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 
 /**
@@ -97,6 +98,19 @@ public class Bluetooth extends Aware_Sensor {
     private boolean isBLEScanning = false;
     private HashMap<String, BluetoothDevice> discoveredBLE = new HashMap<String, BluetoothDevice>();
 
+    //NOTE: Accessed through hardcoded string name
+    public static HashMap<String, HashMap<String, String>> SETTINGS_PERMISSIONS = new HashMap<String, HashMap<String, String>>(){{
+       put(Manifest.permission.ACCESS_COARSE_LOCATION, new HashMap<String, String>(){{
+           put("Bluetooth sensing", Aware_Preferences.STATUS_BLUETOOTH);
+       }});
+    }};
+
+    private static ArrayList<String> ADDITIONAL_PERMISSIONS = new ArrayList<String>(){{
+        add(Manifest.permission.BLUETOOTH);
+        add(Manifest.permission.BLUETOOTH_ADMIN);
+        add(Manifest.permission.ACCESS_COARSE_LOCATION); //we need this permission for BT scanning to work
+    }};
+
     /**
      * Get an instance for the Bluetooth Service
      *
@@ -126,10 +140,6 @@ public class Bluetooth extends Aware_Sensor {
 
         Intent backgroundService = new Intent(ACTION_AWARE_BLUETOOTH_REQUEST_SCAN);
         bluetoothScan = PendingIntent.getBroadcast(this, 0, backgroundService, PendingIntent.FLAG_UPDATE_CURRENT);
-
-        REQUIRED_PERMISSIONS.add(Manifest.permission.BLUETOOTH);
-        REQUIRED_PERMISSIONS.add(Manifest.permission.BLUETOOTH_ADMIN);
-        REQUIRED_PERMISSIONS.add(Manifest.permission.ACCESS_COARSE_LOCATION); //we need this permission for BT scanning to work
 
         bluetoothAdapter = (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR2) ? ((BluetoothManager) getSystemService(Context.BLUETOOTH_SERVICE)).getAdapter() : BluetoothAdapter.getDefaultAdapter();
         if (bluetoothAdapter == null) {
@@ -175,6 +185,12 @@ public class Bluetooth extends Aware_Sensor {
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
+        for (String addPermission: ADDITIONAL_PERMISSIONS) {
+            if (!REQUIRED_PERMISSIONS.contains(addPermission)) {
+                REQUIRED_PERMISSIONS.add(addPermission);
+            }
+        }
+
         super.onStartCommand(intent, flags, startId);
 
         if (PERMISSIONS_OK) {
@@ -196,9 +212,7 @@ public class Bluetooth extends Aware_Sensor {
                 DEBUG = Aware.getSetting(this, Aware_Preferences.DEBUG_FLAG).equals("true");
                 Aware.setSetting(this, Aware_Preferences.STATUS_BLUETOOTH, true);
 
-                if (Aware.getSetting(this, Aware_Preferences.FREQUENCY_BLUETOOTH).length() == 0) {
-                    Aware.setSetting(this, Aware_Preferences.FREQUENCY_BLUETOOTH, 60);
-                }
+                tryParseIntPreference(Aware_Preferences.FREQUENCY_BLUETOOTH, 60);
 
                 save_bluetooth_device(bluetoothAdapter);
 
@@ -239,8 +253,10 @@ public class Bluetooth extends Aware_Sensor {
                         .setExtras(new Bundle()).build();
                 ContentResolver.requestSync(request);
             }
+        } else {
+            stopSelf();
+            return START_NOT_STICKY;
         }
-
         return START_STICKY;
     }
 

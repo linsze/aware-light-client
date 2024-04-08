@@ -150,8 +150,10 @@ public class SignificantMotion extends Aware_Sensor implements SensorEventListen
                         .setExtras(new Bundle()).build();
                 ContentResolver.requestSync(request);
             }
+        } else {
+            stopSelf();
+            return START_NOT_STICKY;
         }
-
         return START_STICKY;
     }
 

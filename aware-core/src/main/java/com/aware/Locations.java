@@ -19,15 +19,30 @@ import com.aware.providers.Locations_Provider;
 import com.aware.providers.Locations_Provider.Locations_Data;
 import com.aware.utils.Aware_Sensor;
 
+import java.util.ArrayList;
+import java.util.HashMap;
+
 /**
  * Location service for Aware framework
  * Provides mobile device network triangulation and GPS location
- *
+ * Permissions: coarse location for network provider, fine location for GPS provider
  * @author denzil
  */
 public class Locations extends Aware_Sensor implements LocationListener {
 
     private static LocationManager locationManager = null;
+
+    //NOTE: Accessed through hardcoded string name
+
+    public static HashMap<String, HashMap<String, String>> SETTINGS_PERMISSIONS = new HashMap<String, HashMap<String, String>>(){{
+        put(Manifest.permission.ACCESS_COARSE_LOCATION, new HashMap<String, String>(){{
+            put("Location tracking based on network", Aware_Preferences.STATUS_LOCATION_NETWORK);
+        }});
+        put(Manifest.permission.ACCESS_FINE_LOCATION, new HashMap<String, String>(){{
+            put("Location tracking based on GPS", Aware_Preferences.STATUS_LOCATION_GPS);
+            put("Passive location tracking", Aware_Preferences.STATUS_LOCATION_PASSIVE);
+        }});
+    }};
 
     /**
      * This listener will keep track for failed GPS location requests
@@ -272,9 +287,6 @@ public class Locations extends Aware_Sensor implements LocationListener {
 
         locationManager = (LocationManager) getSystemService(LOCATION_SERVICE);
 
-        REQUIRED_PERMISSIONS.add(Manifest.permission.ACCESS_COARSE_LOCATION);
-        REQUIRED_PERMISSIONS.add(Manifest.permission.ACCESS_FINE_LOCATION);
-
         if (Aware.DEBUG) Log.d(TAG, "Location sensor is created!");
     }
 
@@ -297,29 +309,37 @@ public class Locations extends Aware_Sensor implements LocationListener {
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
+        //NOTE: Add/remove required permissions based on configuration
+        for (String permission: SETTINGS_PERMISSIONS.keySet()) {
+            ArrayList<String> preferences = new ArrayList<>(SETTINGS_PERMISSIONS.get(permission).values());
+            boolean removePreference = true;
+            for (String p: preferences) {
+                if (Aware.getSetting(getApplicationContext(), p).equals("true")) {
+                    removePreference = false;
+                    if (!REQUIRED_PERMISSIONS.contains(permission)) {
+                        REQUIRED_PERMISSIONS.add(permission);
+                    }
+                }
+            }
+            if (removePreference) {
+                if (REQUIRED_PERMISSIONS.contains(permission)) {
+                    REQUIRED_PERMISSIONS.remove(permission);
+                }
+            }
+        }
+
         super.onStartCommand(intent, flags, startId);
 
         if (PERMISSIONS_OK) {
-
             DEBUG = Aware.getSetting(this, Aware_Preferences.DEBUG_FLAG).equals("true");
 
-            if (Aware.getSetting(getApplicationContext(), Aware_Preferences.FREQUENCY_LOCATION_GPS).length() == 0) {
-                Aware.setSetting(getApplicationContext(), Aware_Preferences.FREQUENCY_LOCATION_GPS, 180);
-            }
-            if (Aware.getSetting(getApplicationContext(), Aware_Preferences.MIN_LOCATION_GPS_ACCURACY).length() == 0) {
-                Aware.setSetting(getApplicationContext(), Aware_Preferences.MIN_LOCATION_GPS_ACCURACY, 150);
-            }
+            tryParseIntPreference(Aware_Preferences.FREQUENCY_LOCATION_GPS, 180);
+            tryParseIntPreference(Aware_Preferences.MIN_LOCATION_GPS_ACCURACY, 150);
+            tryParseIntPreference(Aware_Preferences.FREQUENCY_LOCATION_NETWORK, 300);
+            tryParseIntPreference(Aware_Preferences.MIN_LOCATION_NETWORK_ACCURACY, 1500);
+            tryParseIntPreference(Aware_Preferences.LOCATION_EXPIRATION_TIME, 300);
 
-            if (Aware.getSetting(getApplicationContext(), Aware_Preferences.FREQUENCY_LOCATION_NETWORK).length() == 0) {
-                Aware.setSetting(getApplicationContext(), Aware_Preferences.FREQUENCY_LOCATION_NETWORK, 300);
-            }
-            if (Aware.getSetting(getApplicationContext(), Aware_Preferences.MIN_LOCATION_NETWORK_ACCURACY).length() == 0) {
-                Aware.setSetting(getApplicationContext(), Aware_Preferences.MIN_LOCATION_NETWORK_ACCURACY, 1500);
-            }
-            if (Aware.getSetting(getApplicationContext(), Aware_Preferences.LOCATION_EXPIRATION_TIME).length() == 0) {
-                Aware.setSetting(getApplicationContext(), Aware_Preferences.LOCATION_EXPIRATION_TIME, 300);
-            }
-
+            // GPS tracking
             if (Aware.getSetting(getApplicationContext(), Aware_Preferences.STATUS_LOCATION_GPS).equals("true")) {
                 if (locationManager.getProvider(LocationManager.GPS_PROVIDER) != null) {
                     if (FREQUENCY_GPS != Integer.parseInt(Aware.getSetting(getApplicationContext(), Aware_Preferences.FREQUENCY_LOCATION_GPS))) {
@@ -350,6 +370,8 @@ public class Locations extends Aware_Sensor implements LocationListener {
                     if (Aware.DEBUG) Log.d(TAG, "Location tracking with GPS is not available");
                 }
             }
+
+            // Network tracking
             if (Aware.getSetting(getApplicationContext(), Aware_Preferences.STATUS_LOCATION_NETWORK).equals("true")) {
                 if (locationManager.getProvider(LocationManager.NETWORK_PROVIDER) != null) {
                     if (FREQUENCY_NETWORK != Integer.parseInt(Aware.getSetting(getApplicationContext(), Aware_Preferences.FREQUENCY_LOCATION_NETWORK))) {
@@ -378,6 +400,8 @@ public class Locations extends Aware_Sensor implements LocationListener {
                     if (Aware.DEBUG) Log.d(TAG, "Location tracking with Network is not available");
                 }
             }
+
+            // Passive location tracking
             if (Aware.getSetting(getApplicationContext(), Aware_Preferences.STATUS_LOCATION_PASSIVE).equals("true")) {
                 if (locationManager.getProvider(LocationManager.PASSIVE_PROVIDER) != null) {
                     // We treat this provider differently.  Since there is no battery use
@@ -425,8 +449,10 @@ public class Locations extends Aware_Sensor implements LocationListener {
                         .setExtras(new Bundle()).build();
                 ContentResolver.requestSync(request);
             }
+        } else {
+            stopSelf();
+            return START_NOT_STICKY;
         }
-
         return START_STICKY;
     }
 

@@ -185,15 +185,8 @@ public class Processor extends Aware_Sensor {
             }
 
             DEBUG = Aware.getSetting(this, Aware_Preferences.DEBUG_FLAG).equals("true");
-            if (Aware.getSetting(getApplicationContext(), Aware_Preferences.FREQUENCY_PROCESSOR).length() == 0) {
-                Aware.setSetting(getApplicationContext(), Aware_Preferences.FREQUENCY_PROCESSOR, 10);
-            }
 
-            try {
-                Integer.parseInt(Aware.getSetting(getApplicationContext(), Aware_Preferences.FREQUENCY_PROCESSOR));
-            } catch (NumberFormatException e) {
-                Aware.setSetting(getApplicationContext(), Aware_Preferences.FREQUENCY_PROCESSOR, 10);
-            }
+            tryParseIntPreference(Aware_Preferences.FREQUENCY_PROCESSOR, 10);
 
             Aware.setSetting(this, Aware_Preferences.STATUS_PROCESSOR, true);
             if (FREQUENCY != Integer.parseInt(Aware.getSetting(getApplicationContext(), Aware_Preferences.FREQUENCY_PROCESSOR))) {
@@ -219,8 +212,10 @@ public class Processor extends Aware_Sensor {
                         .setExtras(new Bundle()).build();
                 ContentResolver.requestSync(request);
             }
+        } else {
+            stopSelf();
+            return START_NOT_STICKY;
         }
-
         return START_STICKY;
     }
 

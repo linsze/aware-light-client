@@ -27,6 +27,8 @@ import com.aware.providers.WiFi_Provider.WiFi_Sensor;
 import com.aware.utils.Aware_Sensor;
 import com.aware.utils.Encrypter;
 
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
@@ -72,6 +74,21 @@ public class WiFi extends Aware_Sensor {
      */
     public static final String ACTION_AWARE_WIFI_REQUEST_SCAN = "ACTION_AWARE_WIFI_REQUEST_SCAN";
 
+    //NOTE: Accessed through hardcoded string name
+
+    public static HashMap<String, HashMap<String, String>> SETTINGS_PERMISSIONS = new HashMap<String, HashMap<String, String>>(){{
+        put(Manifest.permission.ACCESS_COARSE_LOCATION, new HashMap<String, String>(){{
+            put("WiFi sensing", Aware_Preferences.STATUS_WIFI);
+        }});
+    }};
+
+    private static ArrayList<String> ADDITIONAL_PERMISSIONS = new ArrayList<String>(){{
+        add(Manifest.permission.CHANGE_WIFI_STATE);
+        add(Manifest.permission.ACCESS_WIFI_STATE);
+        add(Manifest.permission.ACCESS_COARSE_LOCATION);
+        add(Manifest.permission.ACCESS_NETWORK_STATE);
+    }};
+
     @Override
     public void onCreate() {
         super.onCreate();
@@ -88,11 +105,6 @@ public class WiFi extends Aware_Sensor {
         backgroundService = new Intent(this, BackgroundService.class);
         backgroundService.setAction(ACTION_AWARE_WIFI_REQUEST_SCAN);
         wifiScan = PendingIntent.getService(this, 0, backgroundService, PendingIntent.FLAG_UPDATE_CURRENT);
-
-        REQUIRED_PERMISSIONS.add(Manifest.permission.CHANGE_WIFI_STATE);
-        REQUIRED_PERMISSIONS.add(Manifest.permission.ACCESS_WIFI_STATE);
-        REQUIRED_PERMISSIONS.add(Manifest.permission.ACCESS_COARSE_LOCATION);
-        REQUIRED_PERMISSIONS.add(Manifest.permission.ACCESS_NETWORK_STATE);
     }
 
     private static WiFi.AWARESensorObserver awareSensor;
@@ -117,6 +129,12 @@ public class WiFi extends Aware_Sensor {
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
+        for (String addPermission: ADDITIONAL_PERMISSIONS) {
+            if (!REQUIRED_PERMISSIONS.contains(addPermission)) {
+                REQUIRED_PERMISSIONS.add(addPermission);
+            }
+        }
+
         super.onStartCommand(intent, flags, startId);
 
         if (PERMISSIONS_OK) {
@@ -128,9 +146,7 @@ public class WiFi extends Aware_Sensor {
                 DEBUG = Aware.getSetting(this, Aware_Preferences.DEBUG_FLAG).equals("true");
                 Aware.setSetting(this, Aware_Preferences.STATUS_WIFI, true);
 
-                if (Aware.getSetting(this, Aware_Preferences.FREQUENCY_WIFI).length() == 0) {
-                    Aware.setSetting(this, Aware_Preferences.FREQUENCY_WIFI, 60);
-                }
+                tryParseIntPreference(Aware_Preferences.FREQUENCY_WIFI, 60);
 
                 alarmManager.cancel(wifiScan);
                 alarmManager.setRepeating(AlarmManager.RTC_WAKEUP, System.currentTimeMillis() + 1000, Integer.parseInt(Aware.getSetting(getApplicationContext(), Aware_Preferences.FREQUENCY_WIFI)) * 1000, wifiScan);
@@ -153,8 +169,10 @@ public class WiFi extends Aware_Sensor {
                         .setExtras(new Bundle()).build();
                 ContentResolver.requestSync(request);
             }
+        } else {
+            stopSelf();
+            return START_NOT_STICKY;
         }
-
         return START_STICKY;
     }
 

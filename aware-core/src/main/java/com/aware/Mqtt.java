@@ -372,8 +372,10 @@ public class Mqtt extends Aware_Sensor implements MqttCallback {
                     initializeMQTT();
                 }
             }
+        } else {
+            stopSelf();
+            return START_NOT_STICKY;
         }
-
         return START_STICKY;
     }
 
@@ -393,6 +395,8 @@ public class Mqtt extends Aware_Sensor implements MqttCallback {
                 if (Aware.DEBUG) Log.e(TAG, e.getMessage());
             }
         }
+
+        Aware.setSetting(getApplicationContext(), Aware_Preferences.STATUS_MQTT, false);
 
         if (Aware.DEBUG) Log.d(TAG, "MQTT service terminated...");
     }

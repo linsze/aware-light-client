@@ -6,6 +6,7 @@ import android.content.ContentResolver;
 import android.content.ContentValues;
 import android.content.Intent;
 import android.content.SyncRequest;
+import android.content.pm.PackageManager;
 import android.database.ContentObserver;
 import android.database.Cursor;
 import android.database.SQLException;
@@ -20,12 +21,16 @@ import android.telephony.PhoneStateListener;
 import android.telephony.TelephonyManager;
 import android.util.Log;
 
+import androidx.core.app.ActivityCompat;
+
 import com.aware.providers.Communication_Provider;
 import com.aware.providers.Communication_Provider.Calls_Data;
 import com.aware.providers.Communication_Provider.Messages_Data;
 import com.aware.utils.Aware_Sensor;
 import com.aware.utils.Encrypter;
-import com.github.mikephil.charting.utils.FSize;
+
+import java.util.ArrayList;
+import java.util.HashMap;
 
 /**
  * Capture users' communications (calls and messages) events
@@ -90,6 +95,19 @@ public class Communication extends Aware_Sensor {
     private static TelephonyManager telephonyManager = null;
     private static CallsObserver callsObs = null;
     private static MessagesObserver msgsObs = null;
+
+    //NOTE: Accessed through hardcoded string name
+    public static HashMap<String, HashMap<String, String>> SETTINGS_PERMISSIONS = new HashMap<String, HashMap<String, String>>(){{
+        put(Manifest.permission.READ_CALL_LOG, new HashMap<String, String>(){{
+            put("Phone call tracking", Aware_Preferences.STATUS_CALLS);
+        }});
+        put(Manifest.permission.READ_PHONE_STATE, new HashMap<String, String>(){{
+            put("Detection of state/duration of phone calls", Aware_Preferences.STATUS_CALLS);
+        }});
+        put(Manifest.permission.READ_SMS, new HashMap<String, String>(){{
+            put("Text messaging tracking", Aware_Preferences.STATUS_MESSAGES);
+        }});
+    }};
 
     /**
      * ContentObserver for internal call log of Android. When there is a change,
@@ -390,52 +408,122 @@ public class Communication extends Aware_Sensor {
         callsObs = new CallsObserver(new Handler());
         msgsObs = new MessagesObserver(new Handler());
 
-        REQUIRED_PERMISSIONS.add(Manifest.permission.READ_CONTACTS);
-        REQUIRED_PERMISSIONS.add(Manifest.permission.READ_PHONE_STATE);
-        REQUIRED_PERMISSIONS.add(Manifest.permission.READ_CALL_LOG);
-        REQUIRED_PERMISSIONS.add(Manifest.permission.READ_SMS);
-
         if (Aware.DEBUG) Log.d(TAG, "Communication service created!");
+    }
+
+    private void activateCallSensing() {
+        if (Aware.getSetting(getApplicationContext(), Aware_Preferences.STATUS_CALLS).equals("true")) {
+            getContentResolver().registerContentObserver(Calls.CONTENT_URI, true, callsObs);
+            telephonyManager.listen(phoneState, PhoneStateListener.LISTEN_CALL_STATE);
+        } else {
+            getContentResolver().unregisterContentObserver(callsObs);
+        }
+    }
+
+    private void activateMessageSensing() {
+        if (Aware.getSetting(getApplicationContext(), Aware_Preferences.STATUS_MESSAGES).equals("true")) {
+            getContentResolver().registerContentObserver(MESSAGES_CONTENT_URI, true, msgsObs);
+        } else {
+            getContentResolver().unregisterContentObserver(msgsObs);
+        }
+    }
+
+    private void setupDatabaseSync() {
+        if (Aware.isStudy(this)) {
+            ContentResolver.setIsSyncable(Aware.getAWAREAccount(this), Communication_Provider.getAuthority(this), 1);
+            ContentResolver.setSyncAutomatically(Aware.getAWAREAccount(this), Communication_Provider.getAuthority(this), true);
+            long frequency;
+            try {
+                frequency = Long.parseLong(Aware.getSetting(this, Aware_Preferences.FREQUENCY_WEBSERVICE)) * 60;
+            } catch (NumberFormatException e) {
+                frequency = 30 * 60;
+            }
+            SyncRequest request = new SyncRequest.Builder()
+                    .syncPeriodic(frequency, frequency / 3)
+                    .setSyncAdapter(Aware.getAWAREAccount(this), Communication_Provider.getAuthority(this))
+                    .setExtras(new Bundle()).build();
+            ContentResolver.requestSync(request);
+        }
     }
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
-        super.onStartCommand(intent, flags, startId);
-
-        if (PERMISSIONS_OK) {
-            DEBUG = Aware.getSetting(this, Aware_Preferences.DEBUG_FLAG).equals("true");
-            if (Aware.getSetting(getApplicationContext(), Aware_Preferences.STATUS_CALLS).equals("true")) {
-                getContentResolver().registerContentObserver(Calls.CONTENT_URI, true, callsObs);
-                telephonyManager.listen(phoneState, PhoneStateListener.LISTEN_CALL_STATE);
-            } else {
-                getContentResolver().unregisterContentObserver(callsObs);
-            }
-
-            if (Aware.getSetting(getApplicationContext(), Aware_Preferences.STATUS_MESSAGES).equals("true")) {
-                getContentResolver().registerContentObserver(MESSAGES_CONTENT_URI, true, msgsObs);
-            } else {
-                getContentResolver().unregisterContentObserver(msgsObs);
-            }
-
-            if (Aware.DEBUG) Log.d(TAG, TAG + " service active...");
-
-            if (Aware.isStudy(this)) {
-                ContentResolver.setIsSyncable(Aware.getAWAREAccount(this), Communication_Provider.getAuthority(this), 1);
-                ContentResolver.setSyncAutomatically(Aware.getAWAREAccount(this), Communication_Provider.getAuthority(this), true);
-                long frequency;
-                try {
-                    frequency = Long.parseLong(Aware.getSetting(this, Aware_Preferences.FREQUENCY_WEBSERVICE)) * 60;
-                } catch (NumberFormatException e) {
-                    frequency = 30 * 60;
+        // NOTE: Add/remove required permissions based on configuration
+        for (String permission: SETTINGS_PERMISSIONS.keySet()) {
+            ArrayList<String> preferences = new ArrayList<>(SETTINGS_PERMISSIONS.get(permission).values());
+            boolean removePreference = true;
+            for (String p: preferences) {
+                if (Aware.getSetting(getApplicationContext(), p).equals("true")) {
+                    removePreference = false;
+                    if (!REQUIRED_PERMISSIONS.contains(permission)) {
+                        REQUIRED_PERMISSIONS.add(permission);
+                    }
                 }
-                SyncRequest request = new SyncRequest.Builder()
-                        .syncPeriodic(frequency, frequency / 3)
-                        .setSyncAdapter(Aware.getAWAREAccount(this), Communication_Provider.getAuthority(this))
-                        .setExtras(new Bundle()).build();
-                ContentResolver.requestSync(request);
+            }
+            if (removePreference) {
+                if (REQUIRED_PERMISSIONS.contains(permission)) {
+                    REQUIRED_PERMISSIONS.remove(permission);
+                }
             }
         }
 
+        super.onStartCommand(intent, flags, startId);
+
+
+        // All permissions are granted so activate all sensing
+        if (PERMISSIONS_OK) {
+            DEBUG = Aware.getSetting(this, Aware_Preferences.DEBUG_FLAG).equals("true");
+            activateCallSensing();
+            activateMessageSensing();
+            if (Aware.DEBUG) Log.d(TAG, TAG + " service active...");
+            setupDatabaseSync();
+        } else {
+            // Check if some permissions are allowed
+            boolean partialPermissionsAllowed = false;
+            // Some preferences may need more than one permission
+            HashMap<String, ArrayList<String>> preferencePermissions = new HashMap<>();
+            for (String permission: SETTINGS_PERMISSIONS.keySet()) {
+                ArrayList<String> preferences = new ArrayList<>(SETTINGS_PERMISSIONS.get(permission).values());
+                ArrayList<String> currentPrefPermissions = new ArrayList<>();
+                for (String pref: preferences) {
+                    if (preferencePermissions.containsKey(pref)) {
+                        currentPrefPermissions = preferencePermissions.get(pref);
+                    }
+                    currentPrefPermissions.add(permission);
+                    preferencePermissions.put(pref, currentPrefPermissions);
+                }
+            }
+
+            // Check all permissions for each preference
+            for (String pref: preferencePermissions.keySet()) {
+                boolean requiredPermissionsGranted = true;
+                for (String permission: preferencePermissions.get(pref)) {
+                    if (ActivityCompat.checkSelfPermission(getApplicationContext(), permission) != PackageManager.PERMISSION_GRANTED) {
+                        requiredPermissionsGranted = false;
+                        break;
+                    }
+                }
+                if (requiredPermissionsGranted) {
+                    partialPermissionsAllowed = true;
+                    switch (pref) {
+                        case (Aware_Preferences.STATUS_CALLS):
+                            activateCallSensing();
+                            break;
+                        case (Aware_Preferences.STATUS_MESSAGES):
+                            activateMessageSensing();
+                            break;
+                    }
+                }
+            }
+
+            if (partialPermissionsAllowed) {
+                setupDatabaseSync();
+            } else {
+                // None of the permissions are allowed
+                stopSelf();
+                return START_NOT_STICKY;
+            }
+        }
         return START_STICKY;
     }
 

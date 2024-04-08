@@ -315,6 +315,7 @@ public class Accelerometer extends Aware_Sensor implements SensorEventListener {
                 }
             }
         } else {
+            stopSelf();
             return START_NOT_STICKY;
         }
         return START_STICKY;
