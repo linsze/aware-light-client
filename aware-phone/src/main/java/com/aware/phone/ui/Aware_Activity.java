@@ -1,10 +1,7 @@
 package com.aware.phone.ui;
 
-import static com.aware.utils.PermissionUtils.SERVICE_FULL_PERMISSIONS_NOT_GRANTED;
-
 import android.Manifest;
 import android.content.Intent;
-import android.content.IntentFilter;
 import android.os.Build;
 import android.os.Bundle;
 import android.view.Menu;
@@ -16,20 +13,15 @@ import com.aware.Aware_Preferences;
 import com.aware.phone.R;
 import com.aware.phone.ui.dialogs.JoinStudyDialog;
 import com.aware.ui.PermissionsHandler;
-import com.aware.utils.PermissionUtils;
 import com.google.android.material.bottomnavigation.BottomNavigationView;
 
 import java.util.ArrayList;
 
 public abstract class Aware_Activity extends AppCompatPreferenceActivity {
-    private static PermissionUtils.ServicePermissionResultReceiver servicePermissionResultReceiver;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        IntentFilter permissionResults = new IntentFilter();
-        permissionResults.addAction(SERVICE_FULL_PERMISSIONS_NOT_GRANTED);
-        registerReceiver(servicePermissionResultReceiver, permissionResults);
     }
 
     @Override

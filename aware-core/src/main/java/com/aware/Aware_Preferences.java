@@ -752,4 +752,38 @@ public class Aware_Preferences {
      * JSON object of services (sensors and plugins) which the necessary additional permissions have been denied.
      */
     public static final String DENIED_PERMISSIONS_SERVICES = "denied_permissions_services";
+
+    /**
+     * Boolean state of whether the current service is activated as part of a bulk activation
+     * Used to display multiple denied permissions at once.
+     * NOTE: Configured when Aware.startAWARE is called based on its additional argument.
+     */
+    public static final String BULK_SERVICE_ACTIVATION = "first_bulk_service_activation";
+
+    /**
+     * Boolean state of whether Aware service is ready to be started.
+     * (i.e., when study is valid, mandatory permissions are granted, and scheduler is running)
+     */
+    public static final String AWARE_READY = "aware_ready";
+
+    /**
+     * Boolean state of whether the application has just been redirected to local settings to update permissions.
+     * NOTE: check if permissions have been updated after a bulk service activation.
+     */
+    public static final String REDIRECTED_TO_LOCAL_PERMISSIONS = "redirected_to_local_permissions";
+
+    /**
+     * Boolean state of whether the application has just been redirected to local settings to update permissions.
+     * NOTE: check if permissions have been updated after updating a single preference.
+     */
+    public static final String REDIRECTED_TO_LOCAL_PERMISSIONS_FROM_SINGLE_PREFERENCE = "redirected_to_local_permissions_from_single_preference";
+    /**
+     * Store the preference key for the selected service to be checked and updated after redirecting from local permissions.
+     */
+    public static final String REDIRECTED_SERVICE = "redirected_service";
+
+    /**
+     * Store list of permissions to be checked if they have been updated after redirecting from local permissions.
+     */
+    public static final String REDIRECTED_PERMISSIONS = "redirected_permissions";
 }

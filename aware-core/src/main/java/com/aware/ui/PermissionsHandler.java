@@ -169,6 +169,10 @@ public class PermissionsHandler extends Activity {
                 } else if (redirect_activity != null) {
                     setResult(Activity.RESULT_OK, redirect_activity);
                 }
+                // Update global state that mandatory permissions have been granted
+                if (service_name.contains("Scheduler")) {
+                    Aware.setSetting(getApplicationContext(), Aware_Preferences.AWARE_READY, true);
+                }
             }
             finish();
         } else {
@@ -190,8 +194,5 @@ public class PermissionsHandler extends Activity {
             startActivity(redirect_activity);
         }
         Log.d("Permissions", "Handled permissions for " + getPackageName());
-
-        // Remove service from the queue
-        PermissionUtils.removeServiceFromPermissionQueue(getApplicationContext(), service_name);
     }
 }

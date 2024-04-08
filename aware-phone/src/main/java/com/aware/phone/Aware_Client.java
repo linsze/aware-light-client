@@ -171,7 +171,7 @@ public class Aware_Client extends Aware_Activity implements SharedPreferences.On
             new SettingsSync().execute(pref);
 
             //Start/Stop sensor
-            Aware.startAWARE(getApplicationContext());
+            Aware.startAWARE(getApplicationContext(), false);
         }
         if (EditTextPreference.class.isInstance(pref)) {
             EditTextPreference text = (EditTextPreference) findPreference(key);

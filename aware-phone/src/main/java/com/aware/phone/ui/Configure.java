@@ -43,7 +43,7 @@ public class Configure extends Aware_Activity {
     private RecyclerView.Adapter permissionsAdapter;
     private RecyclerView.LayoutManager permissionsLayoutManager;
 
-    private final PermissionUtils.ServicePermissionResultReceiver servicePermissionResultReceiver = new PermissionUtils.ServicePermissionResultReceiver(Configure.this);
+    private final PermissionUtils.SingleServicePermissionReceiver singleServicePermissionReceiver = new PermissionUtils.SingleServicePermissionReceiver(Configure.this);
 
     private final MandatoryPermissionGrantedReceiver mandatoryPermissionGrantedReceiver = new MandatoryPermissionGrantedReceiver(Configure.this);
 
@@ -80,7 +80,7 @@ public class Configure extends Aware_Activity {
 
         IntentFilter permissionResults = new IntentFilter();
         permissionResults.addAction(SERVICE_FULL_PERMISSIONS_NOT_GRANTED);
-        registerReceiver(servicePermissionResultReceiver, permissionResults);
+        registerReceiver(singleServicePermissionReceiver, permissionResults);
 
         IntentFilter mandatoryPermissionsResults = new IntentFilter();
         mandatoryPermissionsResults.addAction(MANDATORY_PERMISSIONS_GRANTED);
@@ -174,7 +174,7 @@ public class Configure extends Aware_Activity {
     @Override
     protected void onDestroy() {
         super.onDestroy();
-        unregisterReceiver(servicePermissionResultReceiver);
+        unregisterReceiver(singleServicePermissionReceiver);
         unregisterReceiver(mandatoryPermissionGrantedReceiver);
     }
 
@@ -264,7 +264,7 @@ public class Configure extends Aware_Activity {
             mLoader = new ProgressDialog(Configure.this);
             mLoader.setTitle(R.string.loading_join_study_title);
             mLoader.setMessage(getResources().getString(R.string.loading_join_study_msg));
-            mLoader.setCancelable(true);
+            mLoader.setCancelable(false);
             mLoader.setIndeterminate(true);
             mLoader.show();
         }

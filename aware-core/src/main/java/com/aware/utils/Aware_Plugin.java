@@ -5,7 +5,6 @@ import static com.aware.ui.PermissionsHandler.ACTION_AWARE_PERMISSIONS_CHECK;
 import static com.aware.utils.PermissionUtils.SERVICE_FULL_PERMISSIONS_NOT_GRANTED;
 import static com.aware.utils.PermissionUtils.SERVICE_NAME;
 import static com.aware.utils.PermissionUtils.UNGRANTED_PERMISSIONS;
-import static com.aware.utils.PermissionUtils.resetPermissionStatuses;
 
 import android.Manifest;
 import android.app.Service;
@@ -14,11 +13,9 @@ import android.content.pm.PackageManager;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.IBinder;
-import android.text.TextUtils;
 import android.util.Log;
 
 import androidx.core.content.ContextCompat;
-import androidx.core.content.PermissionChecker;
 import com.aware.Aware;
 import com.aware.Aware_Preferences;
 import com.aware.ui.PermissionsHandler;
@@ -27,7 +24,6 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.util.ArrayList;
-import java.util.Arrays;
 
 /**
  * Aware_Plugin: Extend to integrate with the framework (extension of Android Service class).
@@ -199,7 +195,7 @@ public class Aware_Plugin extends Service {
         if (PERMISSIONS_OK) {
            //Aware.debug(this, "destroyed: " + getClass().getName() + " package: " + getPackageName());
 
-           Aware.stopAWARE(getApplicationContext());
+           // Aware.stopAWARE(getApplicationContext());
         }
 
         if (contextBroadcaster != null) unregisterReceiver(contextBroadcaster);
@@ -210,7 +206,7 @@ public class Aware_Plugin extends Service {
         pluginInactiveIntent.putExtra(Aware.PLUGIN_STATUS, false);
         sendBroadcast(pluginInactiveIntent);
 
-        resetPermissionStatuses(getApplicationContext(), PENDING_PERMISSIONS);
+        PermissionUtils.resetPermissionStatuses(getApplicationContext(), PENDING_PERMISSIONS);
     }
 
     /**

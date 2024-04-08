@@ -1,11 +1,6 @@
 
 package com.aware;
 
-import static com.aware.utils.PermissionUtils.PERMISSION_NAME;
-import static com.aware.utils.PermissionUtils.SERVICES_WITH_DENIED_PERMISSIONS;
-import static com.aware.utils.PermissionUtils.SERVICE_FULL_PERMISSIONS_NOT_GRANTED;
-import static com.aware.utils.PermissionUtils.UNGRANTED_PERMISSIONS;
-
 import android.Manifest;
 import android.accounts.Account;
 import android.accounts.AccountManager;
@@ -31,12 +26,10 @@ import android.os.*;
 import android.preference.PreferenceManager;
 import android.provider.Settings;
 import android.telephony.TelephonyManager;
-import android.text.TextUtils;
 import android.util.Log;
 import android.util.TypedValue;
 import android.view.View;
 import android.view.ViewGroup;
-import android.widget.ArrayAdapter;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
@@ -795,18 +788,14 @@ public class Aware extends Service {
                     }
                 }
 
-                if (intent.getAction().equalsIgnoreCase(ACTION_AWARE_KEEP_ALIVE)) {
-                    if (!Aware.IS_CORE_RUNNING) {
-                        startAWARE(getApplicationContext());
-                        startPlugins(getApplicationContext());
-                    }
-                }
-
-            } else {
-                if (!Aware.IS_CORE_RUNNING) {
-                    startAWARE(getApplicationContext());
+                if (intent.getAction().equalsIgnoreCase(ACTION_AWARE_KEEP_ALIVE) && Aware.getSetting(getApplicationContext(), Aware_Preferences.AWARE_READY).equals("true")) {
+                    startAWARE(getApplicationContext(), true);
                     startPlugins(getApplicationContext());
                 }
+
+            } else if (Aware.getSetting(getApplicationContext(), Aware_Preferences.AWARE_READY).equals("true")) {
+                startAWARE(getApplicationContext(), true);
+                startPlugins(getApplicationContext());
             }
 
             if (Aware.isStudy(this)) {
@@ -2479,38 +2468,15 @@ public class Aware extends Service {
         }
     }
 
-    public static void displayDeniedPermissions(Context context) {
-        // Check to trigger handling for denied permissions all at once
-        String deniedPermissionsStr = Aware.getSetting(context, Aware_Preferences.DENIED_PERMISSIONS_SERVICES);
-        JSONObject deniedPermissions = new JSONObject();
-        try {
-            if (!deniedPermissionsStr.equals("")) {
-                deniedPermissions = new JSONObject(deniedPermissionsStr);
-                Iterator<String> permissions = deniedPermissions.keys();
-                while(permissions.hasNext()) {
-                    String currentPermission = permissions.next();
-                    ArrayList<String> services = new ArrayList<>(Arrays.asList(deniedPermissions.getString(currentPermission).split(",")));
-                    Intent permissionDeniedIntent = new Intent(SERVICES_WITH_DENIED_PERMISSIONS);
-                    permissionDeniedIntent.putExtra(PERMISSION_NAME, currentPermission);
-                    permissionDeniedIntent.putExtra(UNGRANTED_PERMISSIONS, services);
-                    context.sendBroadcast(permissionDeniedIntent);
-                }
-            }
-        } catch (JSONException e) {
-            e.printStackTrace();
-        }
-    }
-
     /**
      * Start core and active services
      * NOTE: Updated to only start the services if they are not currently running (is null).
+     * Include a new argument of the current status of bulk activation that is used to handle permissions for multiple sensing at once.
      */
-    public static void startAWARE(Context context) {
+    public static void startAWARE(Context context, Boolean bulkActivationStatus) {
 
         startScheduler(context);
-
-        // Reset the state of services with denied permissions before starting
-        Aware.setSetting(context, Aware_Preferences.DENIED_PERMISSIONS_SERVICES, "");
+        Aware.setSetting(context, Aware_Preferences.BULK_SERVICE_ACTIVATION, bulkActivationStatus);
 
         if (Aware.getSetting(context, Aware_Preferences.STATUS_SIGNIFICANT_MOTION).equals("true")) {
             startSignificant(context);
@@ -2621,8 +2587,6 @@ public class Aware extends Service {
         if (Aware.getSetting(context, Aware_Preferences.STATUS_SCREENTEXT).equals("true")) {
             startScreenText(context);
         } else stopScreenText(context);
-
-        // displayDeniedPermissions(context);
     }
 
     public static void startPlugins(Context context) {
@@ -2806,13 +2770,12 @@ public class Aware extends Service {
             case (Aware_Preferences.STATUS_LOCATION_GPS):
             case (Aware_Preferences.STATUS_LOCATION_NETWORK):
             case (Aware_Preferences.STATUS_LOCATION_PASSIVE):
-                //TODO: Deactivate specific setting but still enable the others
-//                preferenceStatus = (Aware.getSetting(context, Aware_Preferences.STATUS_LOCATION_GPS).equals("true")
-//                        || Aware.getSetting(context, Aware_Preferences.STATUS_LOCATION_NETWORK).equals("true")
-//                        || Aware.getSetting(context, Aware_Preferences.STATUS_LOCATION_PASSIVE).equals("true"));
-//                if (preferenceStatus) {
-//                    startLocations(context);
-//                } else stopLocations(context);
+                preferenceStatus = (Aware.getSetting(context, Aware_Preferences.STATUS_LOCATION_GPS).equals("true")
+                        || Aware.getSetting(context, Aware_Preferences.STATUS_LOCATION_NETWORK).equals("true")
+                        || Aware.getSetting(context, Aware_Preferences.STATUS_LOCATION_PASSIVE).equals("true"));
+                if (preferenceStatus) {
+                    startLocations(context);
+                } else stopLocations(context);
                 break;
             case (Aware_Preferences.STATUS_BLUETOOTH):
                 if (preferenceStatus) {
@@ -2842,11 +2805,10 @@ public class Aware extends Service {
             case (Aware_Preferences.STATUS_COMMUNICATION_EVENTS):
             case (Aware_Preferences.STATUS_CALLS):
             case (Aware_Preferences.STATUS_MESSAGES):
-                //TODO: Deactivate specific setting but still enable the others
-//                preferenceStatus = (Aware.getSetting(context, Aware_Preferences.STATUS_COMMUNICATION_EVENTS).equals("true") || Aware.getSetting(context, Aware_Preferences.STATUS_CALLS).equals("true") || Aware.getSetting(context, Aware_Preferences.STATUS_MESSAGES).equals("true"));
-//                if (preferenceStatus) {
-//                    startCommunication(context);
-//                } else stopCommunication(context);
+                preferenceStatus = (Aware.getSetting(context, Aware_Preferences.STATUS_COMMUNICATION_EVENTS).equals("true") || Aware.getSetting(context, Aware_Preferences.STATUS_CALLS).equals("true") || Aware.getSetting(context, Aware_Preferences.STATUS_MESSAGES).equals("true"));
+                if (preferenceStatus) {
+                    startCommunication(context);
+                } else stopCommunication(context);
                 break;
             case (Aware_Preferences.STATUS_PROCESSOR):
                 if (preferenceStatus) {
@@ -3567,7 +3529,7 @@ public class Aware extends Service {
 
     private final PluginStatusReceiver pluginStatusReceiver = new PluginStatusReceiver();
 
-    public class PluginStatusReceiver extends BroadcastReceiver {
+    private class PluginStatusReceiver extends BroadcastReceiver {
         @Override
         public void onReceive(Context context, Intent intent) {
             String plugin = intent.getStringExtra(PLUGIN_NAME);
