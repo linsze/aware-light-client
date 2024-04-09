@@ -556,9 +556,17 @@ public class Applications extends AccessibilityService {
             sendBroadcast(new Intent(Aware.ACTION_AWARE_PRIORITY_FOREGROUND));
         }
 
-        if (Aware.getSetting(getApplicationContext(), Aware_Preferences.FREQUENCY_APPLICATIONS).length() == 0) {
+        try {
+            String freq = Aware.getSetting(getApplicationContext(), Aware_Preferences.FREQUENCY_APPLICATIONS);
+            int freqInt = Integer.parseInt(freq);
+            Aware.setSetting(getApplicationContext(), Aware_Preferences.FREQUENCY_APPLICATIONS, freqInt);
+        } catch (NumberFormatException e) {
             Aware.setSetting(getApplicationContext(), Aware_Preferences.FREQUENCY_APPLICATIONS, 0);
         }
+
+//        if (Aware.getSetting(getApplicationContext(), Aware_Preferences.FREQUENCY_APPLICATIONS).length() == 0) {
+//            Aware.setSetting(getApplicationContext(), Aware_Preferences.FREQUENCY_APPLICATIONS, 0);
+//        }
 
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP && Aware.getSetting(getApplicationContext(), Aware_Preferences.STATUS_APPLICATIONS).equals("true") && Integer.parseInt(Aware.getSetting(getApplicationContext(), Aware_Preferences.FREQUENCY_APPLICATIONS)) > 0) {
             try {

@@ -75,9 +75,11 @@ public class WiFi extends Aware_Sensor {
     public static final String ACTION_AWARE_WIFI_REQUEST_SCAN = "ACTION_AWARE_WIFI_REQUEST_SCAN";
 
     //NOTE: Accessed through hardcoded string name
-
     public static HashMap<String, HashMap<String, String>> SETTINGS_PERMISSIONS = new HashMap<String, HashMap<String, String>>(){{
         put(Manifest.permission.ACCESS_COARSE_LOCATION, new HashMap<String, String>(){{
+            put("WiFi sensing", Aware_Preferences.STATUS_WIFI);
+        }});
+        put(Manifest.permission.ACCESS_WIFI_STATE, new HashMap<String, String>(){{
             put("WiFi sensing", Aware_Preferences.STATUS_WIFI);
         }});
     }};

@@ -86,7 +86,6 @@ public class PermissionUtils {
      */
     public static final String SENSOR_PREFERENCE_UPDATED = "SENSOR_PREFERENCE_UPDATED";
     public static final String SENSOR_PREFERENCE = "sensor_preference";
-    public static final String PREFERENCE_STATUS = "preference_status";
 
     public static final String MULTIPLE_PREFERENCES_UPDATED = "multiple_preference_updated";
 
@@ -94,14 +93,14 @@ public class PermissionUtils {
      * Used to display rationale for required permissions.
      */
     public static HashMap<String, String[]> PERMISSION_DESCRIPTIONS = new HashMap<String, String[]>(){{
-        put(Manifest.permission.GET_ACCOUNTS, new String[]{"Access to contacts", "retrieve account used for data synchronization"});
-        put(Manifest.permission.WRITE_EXTERNAL_STORAGE, new String[]{"Access to external storage", "store data locally"});
-        put(Manifest.permission.RECORD_AUDIO, new String[]{"Permission to record audio", "detect environmental audio"});
-        put(Manifest.permission.ACCESS_FINE_LOCATION, new String[]{"Access to precise location", "estimate more precise location"});
-        put(Manifest.permission.ACCESS_COARSE_LOCATION, new String[]{"Access to rough location", "estimate approximate location"});
-        put(Manifest.permission.READ_PHONE_STATE, new String[]{"Access to phone state", "detect ongoing calls (without call content) and cellular network"});
-        put(Manifest.permission.READ_CALL_LOG, new String[]{"Access to call logs", "track incoming/outgoing/missed calls without call content"});
-        put(Manifest.permission.READ_SMS, new String[]{"Access to SMS messages", "track incoming/outgoing messages without message content"});
+        put(Manifest.permission.GET_ACCOUNTS, new String[]{"Contacts", "database sync"});
+        put(Manifest.permission.WRITE_EXTERNAL_STORAGE, new String[]{"Files", "local data storage"});
+        put(Manifest.permission.RECORD_AUDIO, new String[]{"Microphone", "audio detection"});
+        put(Manifest.permission.ACCESS_FINE_LOCATION, new String[]{"Precise location", "more precise location estimate"});
+        put(Manifest.permission.ACCESS_COARSE_LOCATION, new String[]{"Rough location", "approximate location estimate"});
+        put(Manifest.permission.READ_PHONE_STATE, new String[]{"Phone", "call detection"});
+        put(Manifest.permission.READ_CALL_LOG, new String[]{"Call logs", "call logging"});
+        put(Manifest.permission.READ_SMS, new String[]{"SMS", "SMS logging"});
     }};
 
     /**
@@ -274,11 +273,15 @@ public class PermissionUtils {
      */
     public static void disableService(Context context, String service, Activity activity) {
         if (PluginsManager.isInstalled(context, service) != null) {
-            // Broadcast updates of plugin status
+            String pluginPref = service.substring(service.indexOf("plugin")).replaceAll("\\.", "_");
+            Aware.setSetting(context, "status_" + pluginPref, false);
+            Aware.stopPlugin(context, service);
+
+            // NOTE: Sending broadcast is necessary to reflect the changes in checkboxes
+            // Assuming that this function is triggered when failing to activate plugin manually
             Intent pluginIntent = new Intent();
             pluginIntent.setAction(PLUGIN_PREFERENCE_UPDATED);
             pluginIntent.putExtra(UPDATED_PLUGIN, service);
-            pluginIntent.putExtra(PREFERENCE_STATUS, false);
             activity.sendBroadcast(pluginIntent);
         } else {
             String sensorPref = null;
@@ -326,14 +329,10 @@ public class PermissionUtils {
                     }
                     if (!isSensorPref) {
                         try {
-                            String pluginName = "com.aware.plugin." + pref.substring(pref.indexOf("status_")+14);
-                            if (PluginsManager.isInstalled(context, pluginName) != null) {
-                                // Broadcast updates of plugin status
-                                Intent pluginIntent = new Intent();
-                                pluginIntent.setAction(PermissionUtils.PLUGIN_PREFERENCE_UPDATED);
-                                pluginIntent.putExtra(PermissionUtils.UPDATED_PLUGIN, pluginName);
-                                pluginIntent.putExtra(PermissionUtils.PREFERENCE_STATUS, false);
-                                activity.sendBroadcast(pluginIntent);
+                            if (PluginsManager.isInstalled(context, pref) != null) {
+                                String pluginPref = "status_" + pref.substring(pref.indexOf("plugin")).replaceAll("\\.", "_");
+                                Aware.setSetting(context, pluginPref, false);
+                                Aware.stopPlugin(context, pref);
                             }
                         } catch (StringIndexOutOfBoundsException e) {
                             // Do nothing since it's not a valid plugin name
@@ -354,27 +353,6 @@ public class PermissionUtils {
         } catch (JSONException e) {
             e.printStackTrace();
         }
-
-//            for (PermissionServicesInfo p: permissionServicesInfos) {
-//                // Get preference for each setting
-//                HashMap<String, String> settingPreference = p.servicePreferenceMap;
-//                for (String setting: settingPreference.keySet()) {
-//                    String preferenceKey = settingPreference.get(setting);
-//                    Aware.setSetting(context, preferenceKey, false);
-//
-//                    // Send separate broadcast if plugin will be disabled
-//                    String pluginName = "com.aware.plugin." + preferenceKey.substring(preferenceKey.indexOf("status_")+14);
-//                    if (PluginsManager.isInstalled(context, pluginName) != null) {
-//                        // Broadcast updates of plugin status
-//                        Intent pluginIntent = new Intent();
-//                        pluginIntent.setAction(PLUGIN_PREFERENCE_UPDATED);
-//                        pluginIntent.putExtra(UPDATED_PLUGIN, pluginName);
-//                        pluginIntent.putExtra(PREFERENCE_STATUS, false);
-//                        mActivity.sendBroadcast(pluginIntent);
-//                        Aware.stopPlugin(context, pluginName);
-//                    }
-//                }
-//            }
     }
 
     /**
@@ -449,7 +427,7 @@ public class PermissionUtils {
             for (String p: pendingPermissions) {
                 String[] permissionDescriptions = PermissionUtils.PERMISSION_DESCRIPTIONS.get(p);
                 if (permissionDescriptions != null) {
-                    ServicePermissionInfo servicePermissionInfo = new ServicePermissionInfo(permissionDescriptions[0], "Needed to " + permissionDescriptions[1]);
+                    ServicePermissionInfo servicePermissionInfo = new ServicePermissionInfo(permissionDescriptions[0], "For " + permissionDescriptions[1]);
                     deniedPermissions.add(servicePermissionInfo);
                 }
             }
@@ -461,8 +439,40 @@ public class PermissionUtils {
             permissionListAdapter = new PermissionListAdapter(deniedPermissions);
             permissionsRecyclerView.setAdapter(permissionListAdapter);
 
-            // Remove service from the queue
-            PermissionUtils.removeServiceFromPermissionQueue(context, service);
+            // Find preference based on service
+            String serviceClassName = service;
+            if (PluginsManager.isInstalled(context, service) != null) {
+                serviceClassName = serviceClassName + ".Plugin";
+            }
+
+            // Access class by name to get preference descriptions
+            try {
+                Class<?> serviceClass = Class.forName(serviceClassName);
+                Object classInstance = serviceClass.newInstance();
+                // HACK: Field name is currently hardcoded
+                Field settingsPermissionsField = classInstance.getClass().getField("SETTINGS_PERMISSIONS");
+                HashMap<String, HashMap<String, String>> settingsPermissionsMap = (HashMap<String, HashMap<String, String>>) settingsPermissionsField.get(classInstance);
+                ArrayList<String> candidatePrefs = new ArrayList<>();
+                for (String permission: pendingPermissions) {
+                    ArrayList<String> allPermissionPrefs = new ArrayList<>(settingsPermissionsMap.get(permission).values());
+                    if (candidatePrefs.size() == 0) {
+                        candidatePrefs = allPermissionPrefs;
+                    } else {
+                        for (String pref: candidatePrefs) {
+                            if (!allPermissionPrefs.contains(pref)) {
+                                candidatePrefs.remove(pref);
+                            }
+                        }
+                    }
+                }
+                if (candidatePrefs.size() > 0) {
+                    // Remove service from the queue
+                    PermissionUtils.removeServiceFromPermissionQueue(context, candidatePrefs.get(0));
+                }
+            } catch (ClassNotFoundException | ClassCastException | NoSuchFieldException |
+                     IllegalAccessException | java.lang.InstantiationException e) {
+                e.printStackTrace();
+            }
 
             // Exit the application if the permissions are mandatory for the service to run
             builder.setView(dialogView);
@@ -525,7 +535,6 @@ public class PermissionUtils {
 
     /**
      * Listens to broadcasts to display prompts when one or more services are affected due to one or more denied permissions.
-     * NOTE: Currently only for sensors since ambient_noise is currently the only plugin requiring additional permissions.
      */
     public static class DeniedPermissionsReceiver extends BroadcastReceiver {
         private PreferenceActivity currentActivity;
@@ -714,10 +723,10 @@ public class PermissionUtils {
                                 serviceClassName = serviceClassName + ".Plugin";
                             }
 
-                            // Access plugin by name to get preference descriptions
+                            // Access class by name to get preference descriptions
                             try {
-                                Class<?> pluginClass = Class.forName(serviceClassName);
-                                Object classInstance = pluginClass.newInstance();
+                                Class<?> serviceClass = Class.forName(serviceClassName);
+                                Object classInstance = serviceClass.newInstance();
                                 // HACK: Field name is currently hardcoded
                                 Field settingsPermissionsField = classInstance.getClass().getField("SETTINGS_PERMISSIONS");
                                 HashMap<String, HashMap<String, String>> settingsPermissionsMap = (HashMap<String, HashMap<String, String>>) settingsPermissionsField.get(classInstance);

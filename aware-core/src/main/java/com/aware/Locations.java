@@ -5,6 +5,7 @@ import android.content.ContentResolver;
 import android.content.ContentValues;
 import android.content.Intent;
 import android.content.SyncRequest;
+import android.content.pm.PackageManager;
 import android.database.SQLException;
 import android.database.sqlite.SQLiteException;
 import android.location.GpsStatus;
@@ -14,6 +15,8 @@ import android.location.LocationManager;
 import android.os.Bundle;
 import android.os.IBinder;
 import android.util.Log;
+
+import androidx.core.app.ActivityCompat;
 
 import com.aware.providers.Locations_Provider;
 import com.aware.providers.Locations_Provider.Locations_Data;
@@ -307,6 +310,122 @@ public class Locations extends Aware_Sensor implements LocationListener {
         if (Aware.DEBUG) Log.d(TAG, "Locations service terminated...");
     }
 
+    private void activateGPSTracking() {
+        if (Aware.getSetting(getApplicationContext(), Aware_Preferences.STATUS_LOCATION_GPS).equals("true")) {
+            if (locationManager.getProvider(LocationManager.GPS_PROVIDER) != null) {
+                if (FREQUENCY_GPS != Integer.parseInt(Aware.getSetting(getApplicationContext(), Aware_Preferences.FREQUENCY_LOCATION_GPS))) {
+                    locationManager.requestLocationUpdates(
+                            LocationManager.GPS_PROVIDER,
+                            Integer.parseInt(Aware.getSetting(getApplicationContext(), Aware_Preferences.FREQUENCY_LOCATION_GPS)) * 1000,
+                            Integer.parseInt(Aware.getSetting(getApplicationContext(), Aware_Preferences.MIN_LOCATION_GPS_ACCURACY)), this);
+                    locationManager.removeGpsStatusListener(gps_status_listener);
+                    locationManager.addGpsStatusListener(gps_status_listener);
+
+                    FREQUENCY_GPS = Integer.parseInt(Aware.getSetting(getApplicationContext(), Aware_Preferences.FREQUENCY_LOCATION_GPS));
+                }
+                if (Aware.DEBUG)
+                    Log.d(TAG, "Location tracking with GPS is active: " + FREQUENCY_GPS + "s");
+            } else {
+                ContentValues rowData = new ContentValues();
+                rowData.put(Locations_Data.TIMESTAMP, System.currentTimeMillis());
+                rowData.put(Locations_Data.DEVICE_ID, Aware.getSetting(getApplicationContext(), Aware_Preferences.DEVICE_ID));
+                rowData.put(Locations_Data.PROVIDER, LocationManager.GPS_PROVIDER);
+                rowData.put(Locations_Data.LABEL, "disabled");
+                try {
+                    getContentResolver().insert(Locations_Data.CONTENT_URI, rowData);
+                } catch (SQLiteException e) {
+                    if (Aware.DEBUG) Log.d(TAG, e.getMessage());
+                } catch (SQLException e) {
+                    if (Aware.DEBUG) Log.d(TAG, e.getMessage());
+                }
+                if (Aware.DEBUG) Log.d(TAG, "Location tracking with GPS is not available");
+            }
+        }
+    }
+
+    private void activateNetworkTracking() {
+        if (Aware.getSetting(getApplicationContext(), Aware_Preferences.STATUS_LOCATION_NETWORK).equals("true")) {
+            if (locationManager.getProvider(LocationManager.NETWORK_PROVIDER) != null) {
+                if (FREQUENCY_NETWORK != Integer.parseInt(Aware.getSetting(getApplicationContext(), Aware_Preferences.FREQUENCY_LOCATION_NETWORK))) {
+                    locationManager.requestLocationUpdates(
+                            LocationManager.NETWORK_PROVIDER,
+                            Integer.parseInt(Aware.getSetting(getApplicationContext(), Aware_Preferences.FREQUENCY_LOCATION_NETWORK)) * 1000,
+                            Integer.parseInt(Aware.getSetting(getApplicationContext(), Aware_Preferences.MIN_LOCATION_NETWORK_ACCURACY)), this);
+
+                    FREQUENCY_NETWORK = Integer.parseInt(Aware.getSetting(getApplicationContext(), Aware_Preferences.FREQUENCY_LOCATION_NETWORK));
+                }
+                if (Aware.DEBUG)
+                    Log.d(TAG, "Location tracking with Network is active: " + FREQUENCY_NETWORK + "s");
+            } else {
+                ContentValues rowData = new ContentValues();
+                rowData.put(Locations_Data.TIMESTAMP, System.currentTimeMillis());
+                rowData.put(Locations_Data.DEVICE_ID, Aware.getSetting(getApplicationContext(), Aware_Preferences.DEVICE_ID));
+                rowData.put(Locations_Data.PROVIDER, LocationManager.NETWORK_PROVIDER);
+                rowData.put(Locations_Data.LABEL, "disabled");
+                try {
+                    getContentResolver().insert(Locations_Data.CONTENT_URI, rowData);
+                } catch (SQLiteException e) {
+                    if (Aware.DEBUG) Log.d(TAG, e.getMessage());
+                } catch (SQLException e) {
+                    if (Aware.DEBUG) Log.d(TAG, e.getMessage());
+                }
+                if (Aware.DEBUG) Log.d(TAG, "Location tracking with Network is not available");
+            }
+        }
+    }
+
+    private void activatePassiveTracking() {
+        if (Aware.getSetting(getApplicationContext(), Aware_Preferences.STATUS_LOCATION_PASSIVE).equals("true")) {
+            if (locationManager.getProvider(LocationManager.PASSIVE_PROVIDER) != null) {
+                // We treat this provider differently.  Since there is no battery use
+                // and we don't have actual control over frequency, we register for
+                // frequency=60s and no movement threshold.
+                int static_frequency_passive = 60 * 1000;
+                if (FREQUENCY_PASSIVE != static_frequency_passive) {
+                    locationManager.requestLocationUpdates(
+                            LocationManager.PASSIVE_PROVIDER,
+                            static_frequency_passive, 0, this);
+                    FREQUENCY_PASSIVE = static_frequency_passive;
+                }
+                if (Aware.DEBUG)
+                    Log.d(TAG, "Location tracking with passive provider is active: " + FREQUENCY_PASSIVE + "s");
+            } else {
+                ContentValues rowData = new ContentValues();
+                rowData.put(Locations_Data.TIMESTAMP, System.currentTimeMillis());
+                rowData.put(Locations_Data.DEVICE_ID, Aware.getSetting(getApplicationContext(), Aware_Preferences.DEVICE_ID));
+                rowData.put(Locations_Data.PROVIDER, LocationManager.PASSIVE_PROVIDER);
+                rowData.put(Locations_Data.LABEL, "disabled");
+                try {
+                    getContentResolver().insert(Locations_Data.CONTENT_URI, rowData);
+                } catch (SQLiteException e) {
+                    if (Aware.DEBUG) Log.d(TAG, e.getMessage());
+                } catch (SQLException e) {
+                    if (Aware.DEBUG) Log.d(TAG, e.getMessage());
+                }
+                if (Aware.DEBUG)
+                    Log.d(TAG, "Location tracking with passive provider is not available");
+            }
+        }
+    }
+
+    private void setupDatabaseSync() {
+        if (Aware.isStudy(this)) {
+            ContentResolver.setIsSyncable(Aware.getAWAREAccount(this), Locations_Provider.getAuthority(this), 1);
+            ContentResolver.setSyncAutomatically(Aware.getAWAREAccount(this), Locations_Provider.getAuthority(this), true);
+            long frequency;
+            try {
+                frequency = Long.parseLong(Aware.getSetting(this, Aware_Preferences.FREQUENCY_WEBSERVICE)) * 60;
+            } catch (NumberFormatException e) {
+                frequency = 30 * 60;
+            }
+            SyncRequest request = new SyncRequest.Builder()
+                    .syncPeriodic(frequency, frequency / 3)
+                    .setSyncAdapter(Aware.getAWAREAccount(this), Locations_Provider.getAuthority(this))
+                    .setExtras(new Bundle()).build();
+            ContentResolver.requestSync(request);
+        }
+    }
+
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         //NOTE: Add/remove required permissions based on configuration
@@ -339,119 +458,59 @@ public class Locations extends Aware_Sensor implements LocationListener {
             tryParseIntPreference(Aware_Preferences.MIN_LOCATION_NETWORK_ACCURACY, 1500);
             tryParseIntPreference(Aware_Preferences.LOCATION_EXPIRATION_TIME, 300);
 
-            // GPS tracking
-            if (Aware.getSetting(getApplicationContext(), Aware_Preferences.STATUS_LOCATION_GPS).equals("true")) {
-                if (locationManager.getProvider(LocationManager.GPS_PROVIDER) != null) {
-                    if (FREQUENCY_GPS != Integer.parseInt(Aware.getSetting(getApplicationContext(), Aware_Preferences.FREQUENCY_LOCATION_GPS))) {
-                        locationManager.requestLocationUpdates(
-                                LocationManager.GPS_PROVIDER,
-                                Integer.parseInt(Aware.getSetting(getApplicationContext(), Aware_Preferences.FREQUENCY_LOCATION_GPS)) * 1000,
-                                Integer.parseInt(Aware.getSetting(getApplicationContext(), Aware_Preferences.MIN_LOCATION_GPS_ACCURACY)), this);
-                        locationManager.removeGpsStatusListener(gps_status_listener);
-                        locationManager.addGpsStatusListener(gps_status_listener);
-
-                        FREQUENCY_GPS = Integer.parseInt(Aware.getSetting(getApplicationContext(), Aware_Preferences.FREQUENCY_LOCATION_GPS));
-                    }
-                    if (Aware.DEBUG)
-                        Log.d(TAG, "Location tracking with GPS is active: " + FREQUENCY_GPS + "s");
-                } else {
-                    ContentValues rowData = new ContentValues();
-                    rowData.put(Locations_Data.TIMESTAMP, System.currentTimeMillis());
-                    rowData.put(Locations_Data.DEVICE_ID, Aware.getSetting(getApplicationContext(), Aware_Preferences.DEVICE_ID));
-                    rowData.put(Locations_Data.PROVIDER, LocationManager.GPS_PROVIDER);
-                    rowData.put(Locations_Data.LABEL, "disabled");
-                    try {
-                        getContentResolver().insert(Locations_Data.CONTENT_URI, rowData);
-                    } catch (SQLiteException e) {
-                        if (Aware.DEBUG) Log.d(TAG, e.getMessage());
-                    } catch (SQLException e) {
-                        if (Aware.DEBUG) Log.d(TAG, e.getMessage());
-                    }
-                    if (Aware.DEBUG) Log.d(TAG, "Location tracking with GPS is not available");
-                }
-            }
-
-            // Network tracking
-            if (Aware.getSetting(getApplicationContext(), Aware_Preferences.STATUS_LOCATION_NETWORK).equals("true")) {
-                if (locationManager.getProvider(LocationManager.NETWORK_PROVIDER) != null) {
-                    if (FREQUENCY_NETWORK != Integer.parseInt(Aware.getSetting(getApplicationContext(), Aware_Preferences.FREQUENCY_LOCATION_NETWORK))) {
-                        locationManager.requestLocationUpdates(
-                                LocationManager.NETWORK_PROVIDER,
-                                Integer.parseInt(Aware.getSetting(getApplicationContext(), Aware_Preferences.FREQUENCY_LOCATION_NETWORK)) * 1000,
-                                Integer.parseInt(Aware.getSetting(getApplicationContext(), Aware_Preferences.MIN_LOCATION_NETWORK_ACCURACY)), this);
-
-                        FREQUENCY_NETWORK = Integer.parseInt(Aware.getSetting(getApplicationContext(), Aware_Preferences.FREQUENCY_LOCATION_NETWORK));
-                    }
-                    if (Aware.DEBUG)
-                        Log.d(TAG, "Location tracking with Network is active: " + FREQUENCY_NETWORK + "s");
-                } else {
-                    ContentValues rowData = new ContentValues();
-                    rowData.put(Locations_Data.TIMESTAMP, System.currentTimeMillis());
-                    rowData.put(Locations_Data.DEVICE_ID, Aware.getSetting(getApplicationContext(), Aware_Preferences.DEVICE_ID));
-                    rowData.put(Locations_Data.PROVIDER, LocationManager.NETWORK_PROVIDER);
-                    rowData.put(Locations_Data.LABEL, "disabled");
-                    try {
-                        getContentResolver().insert(Locations_Data.CONTENT_URI, rowData);
-                    } catch (SQLiteException e) {
-                        if (Aware.DEBUG) Log.d(TAG, e.getMessage());
-                    } catch (SQLException e) {
-                        if (Aware.DEBUG) Log.d(TAG, e.getMessage());
-                    }
-                    if (Aware.DEBUG) Log.d(TAG, "Location tracking with Network is not available");
-                }
-            }
-
-            // Passive location tracking
-            if (Aware.getSetting(getApplicationContext(), Aware_Preferences.STATUS_LOCATION_PASSIVE).equals("true")) {
-                if (locationManager.getProvider(LocationManager.PASSIVE_PROVIDER) != null) {
-                    // We treat this provider differently.  Since there is no battery use
-                    // and we don't have actual control over frequency, we register for
-                    // frequency=60s and no movement threshold.
-                    int static_frequency_passive = 60 * 1000;
-                    if (FREQUENCY_PASSIVE != static_frequency_passive) {
-                        locationManager.requestLocationUpdates(
-                                LocationManager.PASSIVE_PROVIDER,
-                                static_frequency_passive, 0, this);
-                        FREQUENCY_PASSIVE = static_frequency_passive;
-                    }
-                    if (Aware.DEBUG)
-                        Log.d(TAG, "Location tracking with passive provider is active: " + FREQUENCY_PASSIVE + "s");
-                } else {
-                    ContentValues rowData = new ContentValues();
-                    rowData.put(Locations_Data.TIMESTAMP, System.currentTimeMillis());
-                    rowData.put(Locations_Data.DEVICE_ID, Aware.getSetting(getApplicationContext(), Aware_Preferences.DEVICE_ID));
-                    rowData.put(Locations_Data.PROVIDER, LocationManager.PASSIVE_PROVIDER);
-                    rowData.put(Locations_Data.LABEL, "disabled");
-                    try {
-                        getContentResolver().insert(Locations_Data.CONTENT_URI, rowData);
-                    } catch (SQLiteException e) {
-                        if (Aware.DEBUG) Log.d(TAG, e.getMessage());
-                    } catch (SQLException e) {
-                        if (Aware.DEBUG) Log.d(TAG, e.getMessage());
-                    }
-                    if (Aware.DEBUG)
-                        Log.d(TAG, "Location tracking with passive provider is not available");
-                }
-            }
-
-            if (Aware.isStudy(this)) {
-                ContentResolver.setIsSyncable(Aware.getAWAREAccount(this), Locations_Provider.getAuthority(this), 1);
-                ContentResolver.setSyncAutomatically(Aware.getAWAREAccount(this), Locations_Provider.getAuthority(this), true);
-                long frequency;
-                try {
-                    frequency = Long.parseLong(Aware.getSetting(this, Aware_Preferences.FREQUENCY_WEBSERVICE)) * 60;
-                } catch (NumberFormatException e) {
-                    frequency = 30 * 60;
-                }
-                SyncRequest request = new SyncRequest.Builder()
-                        .syncPeriodic(frequency, frequency / 3)
-                        .setSyncAdapter(Aware.getAWAREAccount(this), Locations_Provider.getAuthority(this))
-                        .setExtras(new Bundle()).build();
-                ContentResolver.requestSync(request);
-            }
+            activateGPSTracking();
+            activateNetworkTracking();
+            activatePassiveTracking();
+            setupDatabaseSync();
         } else {
-            stopSelf();
-            return START_NOT_STICKY;
+            // Check if some permissions are allowed
+            boolean partialPermissionsAllowed = false;
+            // Some preferences may need more than one permission
+            HashMap<String, ArrayList<String>> preferencePermissions = new HashMap<>();
+            for (String permission: SETTINGS_PERMISSIONS.keySet()) {
+                ArrayList<String> preferences = new ArrayList<>(SETTINGS_PERMISSIONS.get(permission).values());
+                ArrayList<String> currentPrefPermissions = new ArrayList<>();
+                for (String pref: preferences) {
+                    if (preferencePermissions.containsKey(pref)) {
+                        currentPrefPermissions = preferencePermissions.get(pref);
+                    }
+                    currentPrefPermissions.add(permission);
+                    preferencePermissions.put(pref, currentPrefPermissions);
+                }
+            }
+
+            // Check all permissions for each preference
+            for (String pref: preferencePermissions.keySet()) {
+                boolean requiredPermissionsGranted = true;
+                for (String permission: preferencePermissions.get(pref)) {
+                    if (ActivityCompat.checkSelfPermission(getApplicationContext(), permission) != PackageManager.PERMISSION_GRANTED) {
+                        requiredPermissionsGranted = false;
+                        break;
+                    }
+                }
+                if (requiredPermissionsGranted) {
+                    partialPermissionsAllowed = true;
+                    switch (pref) {
+                        case (Aware_Preferences.STATUS_LOCATION_GPS):
+                            activateGPSTracking();
+                            break;
+                        case (Aware_Preferences.STATUS_LOCATION_NETWORK):
+                            activateNetworkTracking();
+                            break;
+                        case (Aware_Preferences.STATUS_LOCATION_PASSIVE):
+                            activatePassiveTracking();
+                            break;
+                    }
+                }
+            }
+
+            if (partialPermissionsAllowed) {
+                setupDatabaseSync();
+            } else {
+                // None of the permissions are allowed
+                stopSelf();
+                return START_NOT_STICKY;
+            }
         }
         return START_STICKY;
     }

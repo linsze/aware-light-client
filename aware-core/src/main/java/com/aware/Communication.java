@@ -99,13 +99,13 @@ public class Communication extends Aware_Sensor {
     //NOTE: Accessed through hardcoded string name
     public static HashMap<String, HashMap<String, String>> SETTINGS_PERMISSIONS = new HashMap<String, HashMap<String, String>>(){{
         put(Manifest.permission.READ_CALL_LOG, new HashMap<String, String>(){{
-            put("Phone call tracking", Aware_Preferences.STATUS_CALLS);
+            put("Phone call logging", Aware_Preferences.STATUS_CALLS);
         }});
         put(Manifest.permission.READ_PHONE_STATE, new HashMap<String, String>(){{
-            put("Detection of state/duration of phone calls", Aware_Preferences.STATUS_CALLS);
+            put("Phone call logging", Aware_Preferences.STATUS_CALLS);
         }});
         put(Manifest.permission.READ_SMS, new HashMap<String, String>(){{
-            put("Text messaging tracking", Aware_Preferences.STATUS_MESSAGES);
+            put("Text messaging logging", Aware_Preferences.STATUS_MESSAGES);
         }});
     }};
 

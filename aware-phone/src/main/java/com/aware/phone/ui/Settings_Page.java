@@ -472,6 +472,7 @@ public class Settings_Page extends Aware_Activity {
             String prefString = preference.getKey();
             ListPreference list = (ListPreference) findPreference(prefString);
             String freq = Aware.getSetting(getApplicationContext(), prefString);
+            list.setValue(freq);
             int entryIndex = list.findIndexOfValue(freq);
             CharSequence entryString = list.getEntries()[entryIndex];
             list.setSummary(entryString);
@@ -548,7 +549,6 @@ public class Settings_Page extends Aware_Activity {
                             sensorStatuses.add(child.getKey());
                             if (child.isChecked()) {
                                 isActive = true;
-                                break;
                             }
                         }
                     }

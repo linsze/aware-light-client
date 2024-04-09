@@ -749,7 +749,7 @@ public class Aware_Preferences {
     public static final String PENDING_PERMISSION_SERVICE_QUEUE = "pending_permission_service_queue";
 
     /**
-     * JSON object of services (sensors and plugins) which the necessary additional permissions have been denied.
+     * JSON object of services (individual sensor preferences and plugins) which the necessary additional permissions have been denied.
      */
     public static final String DENIED_PERMISSIONS_SERVICES = "denied_permissions_services";
 
