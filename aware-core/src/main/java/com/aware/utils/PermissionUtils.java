@@ -120,7 +120,7 @@ public class PermissionUtils {
      * @return true if the service is yet to be in the queue, false otherwise
      */
     public static boolean checkPermissionServiceQueue(Context context, String serviceName) {
-        if (serviceName == "") {
+        if (serviceName.equals("")) {
             return false;
         }
 
@@ -140,9 +140,10 @@ public class PermissionUtils {
 
     /**
      * Removes service corresponding to the input preference from the queue after the necessary permissions have been requested.
-     * @param pref current preference
+     * @param pref current preference of a plugin or sensor
+     * @param isClassName boolean of whether the input belongs to the class name of a sensor or plugin
      */
-    public static String removeServiceFromPermissionQueue(Context context, String pref) {
+    public static String removeServiceFromPermissionQueue(Context context, String pref, Boolean isClassName) {
         String serviceQueueStr = Aware.getSetting(context, Aware_Preferences.PENDING_PERMISSION_SERVICE_QUEUE);
         ArrayList<String> serviceQueue = new ArrayList<>();
         if (!serviceQueueStr.equals("")) {
@@ -157,11 +158,15 @@ public class PermissionUtils {
             if (PluginsManager.isInstalled(context, pref) != null) {
                 prefClass = pref;
             } else {
-                for (String sensor: SENSOR_PREFERENCE_MAPPINGS.keySet()) {
-                    ArrayList<String> sensorPrefs = SENSOR_PREFERENCE_MAPPINGS.get(sensor);
-                    if (sensorPrefs.contains(pref)) {
-                        prefClass = sensor;
-                        break;
+                if (isClassName && SENSOR_PREFERENCE_MAPPINGS.keySet().contains(pref)) {
+                    prefClass = pref;
+                } else {
+                    for (String sensor: SENSOR_PREFERENCE_MAPPINGS.keySet()) {
+                        ArrayList<String> sensorPrefs = SENSOR_PREFERENCE_MAPPINGS.get(sensor);
+                        if (sensorPrefs.contains(pref)) {
+                            prefClass = sensor;
+                            break;
+                        }
                     }
                 }
             }
@@ -269,36 +274,40 @@ public class PermissionUtils {
 
     /**
      * Disables plugin or sensor by updating global preferences and sending broadcasts to reflect necessary changes.
-     * NOTE: Service could either be a plugin or a sensor class.
+     * NOTE: Service could be a preference for either a plugin or sensor.
      */
-    public static void disableService(Context context, String service, Activity activity) {
-        if (PluginsManager.isInstalled(context, service) != null) {
-            String pluginPref = service.substring(service.indexOf("plugin")).replaceAll("\\.", "_");
-            Aware.setSetting(context, "status_" + pluginPref, false);
-            Aware.stopPlugin(context, service);
+    public static void disableService(Context context, String servicePref, Activity activity) {
+        if (servicePref.contains("plugin")) {
+            String pluginName = "com.aware." + servicePref.substring(servicePref.indexOf("plugin")).replaceFirst("_", "\\.");
+            if (PluginsManager.isInstalled(context, pluginName) != null) {
+//            String pluginPref = service.substring(service.indexOf("plugin")).replaceAll("\\.", "_");
+//            Aware.setSetting(context, "status_" + pluginPref, false);
+                Aware.setSetting(context, servicePref, false);
+                Aware.stopPlugin(context, pluginName);
 
-            // NOTE: Sending broadcast is necessary to reflect the changes in checkboxes
-            // Assuming that this function is triggered when failing to activate plugin manually
-            Intent pluginIntent = new Intent();
-            pluginIntent.setAction(PLUGIN_PREFERENCE_UPDATED);
-            pluginIntent.putExtra(UPDATED_PLUGIN, service);
-            activity.sendBroadcast(pluginIntent);
+                // NOTE: Sending broadcast is necessary to reflect the changes in checkboxes
+                // Assuming that this function is triggered when failing to activate plugin manually
+                Intent pluginIntent = new Intent();
+                pluginIntent.setAction(PLUGIN_PREFERENCE_UPDATED);
+                pluginIntent.putExtra(UPDATED_PLUGIN, pluginName);
+                activity.sendBroadcast(pluginIntent);
+            }
         } else {
-            String sensorPref = null;
-            if (SENSOR_PREFERENCE_MAPPINGS.containsKey(service)) {
-                for (String pref: SENSOR_PREFERENCE_MAPPINGS.get(service)) {
-                    Aware.setSetting(context, pref, false);
-                    sensorPref = pref;
-                }
-                Aware.setSetting(context, Aware_Preferences.BULK_SERVICE_ACTIVATION, false);
-                Aware.activateSensorFromPreference(context, sensorPref);
+            for (ArrayList<String> sensorPrefs: SENSOR_PREFERENCE_MAPPINGS.values()) {
+                if (sensorPrefs.contains(servicePref)) {
+                    Aware.setSetting(context, servicePref, false);
+                    Aware.setSetting(context, Aware_Preferences.BULK_SERVICE_ACTIVATION, false);
+                    Aware.activateSensorFromPreference(context, servicePref);
 
-                // Broadcast changes to sensor preferences
-                Intent sensorIntent = new Intent();
-                sensorIntent.setAction(SENSOR_PREFERENCE_UPDATED);
-                sensorIntent.putExtra(MULTIPLE_PREFERENCES_UPDATED, false);
-                sensorIntent.putExtra(SENSOR_PREFERENCE, sensorPref);
-                activity.sendBroadcast(sensorIntent);
+                    // Broadcast changes to sensor preferences
+                    Intent sensorIntent = new Intent();
+                    sensorIntent.setAction(SENSOR_PREFERENCE_UPDATED);
+                    sensorIntent.putExtra(MULTIPLE_PREFERENCES_UPDATED, false);
+                    sensorIntent.putExtra(SENSOR_PREFERENCE, servicePref);
+                    activity.sendBroadcast(sensorIntent);
+
+                    break;
+                }
             }
         }
     }
@@ -374,7 +383,45 @@ public class PermissionUtils {
             if (service.contains("Scheduler") || service.contains("com.aware.phone.ui.")) {
                 new ReviewServiceDialog(currentActivity, service, pendingPermissions, true).showDialog();
             } else {
-                new ReviewServiceDialog(currentActivity, service, pendingPermissions, false).showDialog();
+                //NOTE: Map service to the corresponding preference first
+                String servicePref = null;
+                String serviceClassName = service;
+                if (PluginsManager.isInstalled(context, service) != null) {
+                    serviceClassName = serviceClassName + ".Plugin";
+                }
+
+                // Access class by name to get preference descriptions
+                try {
+                    Class<?> serviceClass = Class.forName(serviceClassName);
+                    Object classInstance = serviceClass.newInstance();
+                    // HACK: Field name is currently hardcoded
+                    Field settingsPermissionsField = classInstance.getClass().getField("SETTINGS_PERMISSIONS");
+                    HashMap<String, HashMap<String, String>> settingsPermissionsMap = (HashMap<String, HashMap<String, String>>) settingsPermissionsField.get(classInstance);
+                    ArrayList<String> candidatePrefs = new ArrayList<>();
+                    for (String permission: pendingPermissions) {
+                        ArrayList<String> allPermissionPrefs = new ArrayList<>(settingsPermissionsMap.get(permission).values());
+                        if (candidatePrefs.size() == 0) {
+                            candidatePrefs = allPermissionPrefs;
+                        } else {
+                            for (String pref: candidatePrefs) {
+                                if (!allPermissionPrefs.contains(pref)) {
+                                    candidatePrefs.remove(pref);
+                                }
+                            }
+                        }
+                    }
+                    if (candidatePrefs.size() > 0) {
+                        // Remove service from the queue
+                        servicePref = candidatePrefs.get(0);
+                    }
+                } catch (ClassNotFoundException | ClassCastException | NoSuchFieldException |
+                         IllegalAccessException | java.lang.InstantiationException e) {
+                    e.printStackTrace();
+                }
+
+                if (servicePref != null) {
+                    new ReviewServiceDialog(currentActivity, servicePref, pendingPermissions, false).showDialog();
+                }
             }
         }
     }
@@ -385,17 +432,18 @@ public class PermissionUtils {
     public static class ReviewServiceDialog extends DialogFragment {
         private Activity mActivity;
         private Context context;
-        private String service;
+
+        private String servicePreference;
         private ArrayList<String> pendingPermissions;
         private PermissionListAdapter permissionListAdapter;
 
         private Boolean isMandatory;
 
 
-        public ReviewServiceDialog(Activity activity, String service, ArrayList<String> pendingPermissions, Boolean isMandatory) {
+        public ReviewServiceDialog(Activity activity, String servicePreference, ArrayList<String> pendingPermissions, Boolean isMandatory) {
             this.mActivity = activity;
             this.context = mActivity.getApplicationContext();
-            this.service = service;
+            this.servicePreference = servicePreference;
             this.pendingPermissions = pendingPermissions;
             this.isMandatory = isMandatory;
         }
@@ -439,40 +487,8 @@ public class PermissionUtils {
             permissionListAdapter = new PermissionListAdapter(deniedPermissions);
             permissionsRecyclerView.setAdapter(permissionListAdapter);
 
-            // Find preference based on service
-            String serviceClassName = service;
-            if (PluginsManager.isInstalled(context, service) != null) {
-                serviceClassName = serviceClassName + ".Plugin";
-            }
-
-            // Access class by name to get preference descriptions
-            try {
-                Class<?> serviceClass = Class.forName(serviceClassName);
-                Object classInstance = serviceClass.newInstance();
-                // HACK: Field name is currently hardcoded
-                Field settingsPermissionsField = classInstance.getClass().getField("SETTINGS_PERMISSIONS");
-                HashMap<String, HashMap<String, String>> settingsPermissionsMap = (HashMap<String, HashMap<String, String>>) settingsPermissionsField.get(classInstance);
-                ArrayList<String> candidatePrefs = new ArrayList<>();
-                for (String permission: pendingPermissions) {
-                    ArrayList<String> allPermissionPrefs = new ArrayList<>(settingsPermissionsMap.get(permission).values());
-                    if (candidatePrefs.size() == 0) {
-                        candidatePrefs = allPermissionPrefs;
-                    } else {
-                        for (String pref: candidatePrefs) {
-                            if (!allPermissionPrefs.contains(pref)) {
-                                candidatePrefs.remove(pref);
-                            }
-                        }
-                    }
-                }
-                if (candidatePrefs.size() > 0) {
-                    // Remove service from the queue
-                    PermissionUtils.removeServiceFromPermissionQueue(context, candidatePrefs.get(0));
-                }
-            } catch (ClassNotFoundException | ClassCastException | NoSuchFieldException |
-                     IllegalAccessException | java.lang.InstantiationException e) {
-                e.printStackTrace();
-            }
+            // Remove service from the queue
+            PermissionUtils.removeServiceFromPermissionQueue(context, servicePreference, false);
 
             // Exit the application if the permissions are mandatory for the service to run
             builder.setView(dialogView);
@@ -485,11 +501,11 @@ public class PermissionUtils {
                             resetPermissionStatuses(context, pendingPermissions);
                             if (isMandatory) {
                                 //HACK: Other background processes are currently hardcoded
-                                if (service.contains("Scheduler")) {
+                                if (servicePreference.contains("Scheduler")) {
                                     Aware.startScheduler(context);
                                 }
                             } else {
-                                Aware.setSetting(context, Aware_Preferences.REDIRECTED_SERVICE, service);
+                                Aware.setSetting(context, Aware_Preferences.REDIRECTED_SERVICE, servicePreference);
                                 Aware.setSetting(context, Aware_Preferences.REDIRECTED_PERMISSIONS, TextUtils.join(",", pendingPermissions));
                                 redirectToLocalSettings(Aware_Preferences.REDIRECTED_TO_LOCAL_PERMISSIONS_FROM_SINGLE_PREFERENCE, context, mActivity);
                             }
@@ -503,7 +519,7 @@ public class PermissionUtils {
                                 mActivity.finishAffinity();
                                 System.exit(0);
                             } else {
-                                disableService(context, service, mActivity);
+                                disableService(context, servicePreference, mActivity);
                             }
                         }
                     });
@@ -714,7 +730,7 @@ public class PermissionUtils {
                     HashMap<String, String> settingsPreferences = new HashMap<>();
                     for (String pref: preferences) {
                         // Remove service from the pending permission queue
-                        String serviceClassName = PermissionUtils.removeServiceFromPermissionQueue(context, pref);
+                        String serviceClassName = PermissionUtils.removeServiceFromPermissionQueue(context, pref, false);
 
                         // Construct preference and corresponding layman description to be displayed
                         // NOTE: If pref is a plugin

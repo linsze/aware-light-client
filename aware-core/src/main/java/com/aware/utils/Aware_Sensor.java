@@ -23,7 +23,9 @@ import com.aware.ui.PermissionsHandler;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import java.lang.reflect.Field;
 import java.util.ArrayList;
+import java.util.HashMap;
 
 /**
  * Aware_Sensor: Extend to integrate with the framework (extension of Android Service class).
@@ -168,10 +170,28 @@ public class Aware_Sensor extends Service {
                     return START_NOT_STICKY;
                 }
             }
-        } else if (PERMISSIONS_OK && getClass().getName().contains("Scheduler")) {
-            // Broadcast to notify that mandatory permissions are granted so that main intent can be started
-            Intent mandatoryPermissionsGrantedIntent = new Intent(MANDATORY_PERMISSIONS_GRANTED);
-            sendBroadcast(mandatoryPermissionsGrantedIntent);
+        } else if (PERMISSIONS_OK) {
+            if (getClass().getName().contains("Scheduler")) {
+                // Broadcast to notify that mandatory permissions are granted so that main intent can be started
+                Intent mandatoryPermissionsGrantedIntent = new Intent(MANDATORY_PERMISSIONS_GRANTED);
+                sendBroadcast(mandatoryPermissionsGrantedIntent);
+            } else {
+                // NOTE: Only for those that require additional permissions on top of mandatory ones
+                try {
+                    // Access class by name to get settings affected by the specific permission
+                    Class<?> sensorClass = Class.forName(getClass().getName());
+                    Object classInstance = sensorClass.newInstance();
+                    // HACK: Field name is currently hardcoded
+                    Field settingsPermissionsField = classInstance.getClass().getField("SETTINGS_PERMISSIONS");
+                    HashMap<String, HashMap<String, String>> settingsPermissionsMap = (HashMap<String, HashMap<String, String>>) settingsPermissionsField.get(classInstance);
+                    if (settingsPermissionsMap != null) {
+                        PermissionUtils.removeServiceFromPermissionQueue(getApplicationContext(), getClass().getName(), true);
+                    }
+                } catch (ClassNotFoundException | ClassCastException | NoSuchFieldException |
+                         IllegalAccessException | java.lang.InstantiationException e) {
+                    e.printStackTrace();
+                }
+            }
 //            if (Aware.getSetting(this, Aware_Preferences.STATUS_WEBSERVICE).equals("true") && Aware.getSetting(this, Aware_Preferences.WEBSERVICE_SERVER).contains("https")) {
 //                downloadCertificate(this);
 //            }

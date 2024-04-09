@@ -23,7 +23,9 @@ import com.aware.ui.PermissionsHandler;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import java.lang.reflect.Field;
 import java.util.ArrayList;
+import java.util.HashMap;
 
 /**
  * Aware_Plugin: Extend to integrate with the framework (extension of Android Service class).
@@ -143,9 +145,10 @@ public class Aware_Plugin extends Service {
 
         //HACK: Not all permissions are granted but they have been requested
         // Send broadcast to activity to display a dialog
+        String className = getClass().getName();
+        className = className.substring(0, className.indexOf(".Plugin"));
+
         if (!PERMISSIONS_OK) {
-            String className = getClass().getName();
-            className = className.substring(0, className.indexOf(".Plugin"));
             if (intent != null && intent.getAction() != null && intent.getAction().equals(ACTION_AWARE_PERMISSIONS_CHECK)) {
                 Boolean isFirstBulkServiceActivation = Aware.getSetting(getApplicationContext(), Aware_Preferences.BULK_SERVICE_ACTIVATION).equals("true");
                 if (!isFirstBulkServiceActivation) {
@@ -174,9 +177,25 @@ public class Aware_Plugin extends Service {
                 }
             }
         } else if (PERMISSIONS_OK) {
+            // NOTE: Only for those that require additional permissions on top of mandatory ones
+            try {
+                // Access class by name to get settings affected by the specific permission
+                Class<?> sensorClass = Class.forName(className);
+                Object classInstance = sensorClass.newInstance();
+                // HACK: Field name is currently hardcoded
+                Field settingsPermissionsField = classInstance.getClass().getField("SETTINGS_PERMISSIONS");
+                HashMap<String, HashMap<String, String>> settingsPermissionsMap = (HashMap<String, HashMap<String, String>>) settingsPermissionsField.get(classInstance);
+                if (settingsPermissionsMap != null) {
+                    PermissionUtils.removeServiceFromPermissionQueue(getApplicationContext(), className, false);
+                }
+            } catch (ClassNotFoundException | ClassCastException | NoSuchFieldException |
+                     IllegalAccessException | java.lang.InstantiationException e) {
+                e.printStackTrace();
+            }
+
             Intent pluginActiveIntent = new Intent();
             pluginActiveIntent.setAction(Aware.PLUGIN_STATUS_UPDATE);
-            pluginActiveIntent.putExtra(Aware.PLUGIN_NAME, getClass().getName());
+            pluginActiveIntent.putExtra(Aware.PLUGIN_NAME, className);
             pluginActiveIntent.putExtra(Aware.PLUGIN_STATUS, true);
             sendBroadcast(pluginActiveIntent);
 //            if (Aware.getSetting(this, Aware_Preferences.STATUS_WEBSERVICE).equals("true")) {
@@ -209,7 +228,8 @@ public class Aware_Plugin extends Service {
 
         Intent pluginInactiveIntent = new Intent();
         pluginInactiveIntent.setAction(Aware.PLUGIN_STATUS_UPDATE);
-        pluginInactiveIntent.putExtra(Aware.PLUGIN_NAME, getClass().getName());
+        String className = getClass().getName();
+        pluginInactiveIntent.putExtra(Aware.PLUGIN_NAME, className.substring(0, className.indexOf(".Plugin")));
         pluginInactiveIntent.putExtra(Aware.PLUGIN_STATUS, false);
         sendBroadcast(pluginInactiveIntent);
 
