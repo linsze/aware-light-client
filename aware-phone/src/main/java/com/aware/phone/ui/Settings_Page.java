@@ -1,6 +1,9 @@
 package com.aware.phone.ui;
 
 import static com.aware.Aware.TAG;
+import static com.aware.utils.PermissionUtils.MULTIPLE_PREFERENCES_UPDATED;
+import static com.aware.utils.PermissionUtils.SENSOR_PREFERENCE_MAPPINGS;
+import static com.aware.utils.PermissionUtils.SERVICES_WITH_DENIED_PERMISSIONS;
 import static com.aware.utils.PermissionUtils.SERVICE_FULL_PERMISSIONS_NOT_GRANTED;
 import static com.aware.utils.PermissionUtils.SENSOR_PREFERENCE;
 import static com.aware.utils.PermissionUtils.SENSOR_PREFERENCE_UPDATED;
@@ -13,6 +16,7 @@ import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.pm.PackageInfo;
+import android.content.pm.PackageManager;
 import android.graphics.PorterDuff;
 import android.graphics.PorterDuffColorFilter;
 import android.graphics.drawable.Drawable;
@@ -32,6 +36,7 @@ import android.widget.ListAdapter;
 import android.widget.Toast;
 
 import androidx.appcompat.widget.Toolbar;
+import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 
 import com.aware.Aware;
@@ -46,6 +51,8 @@ import org.json.JSONObject;
 
 import java.lang.reflect.Field;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Iterator;
 import java.util.Map;
 
 /**
@@ -59,7 +66,11 @@ public class Settings_Page extends Aware_Activity {
 
     private SensorPreferenceListener sensorPreferenceListener = new SensorPreferenceListener();
 
-    private final PermissionUtils.ServicePermissionResultReceiver servicePermissionResultReceiver = new PermissionUtils.ServicePermissionResultReceiver(Settings_Page.this);
+    private final PermissionUtils.SingleServicePermissionReceiver singleServicePermissionReceiver = new PermissionUtils.SingleServicePermissionReceiver(Settings_Page.this);
+
+    private final PermissionUtils.DeniedPermissionsReceiver deniedPermissionsReceiver = new PermissionUtils.DeniedPermissionsReceiver(Settings_Page.this);
+
+    private ArrayList<String> currentPlugins = new ArrayList<>();
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -69,6 +80,7 @@ public class Settings_Page extends Aware_Activity {
         setContentView(R.layout.aware_light_main);
         // addPreferencesFromResource(R.xml.pref_aware_light);
         addPreferencesFromResource(R.xml.pref_sensors_plugins);
+        setupPlugins();
 
         // Monitors for external changes in plugin's states and refresh the UI
         pluginsListener = new PluginsListener();
@@ -79,11 +91,17 @@ public class Settings_Page extends Aware_Activity {
 
         IntentFilter permissionResults = new IntentFilter();
         permissionResults.addAction(SERVICE_FULL_PERMISSIONS_NOT_GRANTED);
-        registerReceiver(servicePermissionResultReceiver, permissionResults);
+        registerReceiver(singleServicePermissionReceiver, permissionResults);
 
         IntentFilter sensorPreferenceChanges = new IntentFilter();
         sensorPreferenceChanges.addAction(SENSOR_PREFERENCE_UPDATED);
         registerReceiver(sensorPreferenceListener, sensorPreferenceChanges);
+
+        IntentFilter deniedPermissionsResults = new IntentFilter();
+        deniedPermissionsResults.addAction(SERVICES_WITH_DENIED_PERMISSIONS);
+        registerReceiver(deniedPermissionsReceiver, deniedPermissionsResults);
+
+        Aware.setSetting(getApplicationContext(), Aware_Preferences.BULK_SERVICE_ACTIVATION, true);
     }
 
     /**
@@ -105,9 +123,14 @@ public class Settings_Page extends Aware_Activity {
         @Override
         public void onReceive(Context context, Intent intent) {
             String prefKey = intent.getStringExtra(SENSOR_PREFERENCE);
-            Preference sensorPref = findPreference(prefKey);
-            if (sensorPref != null) {
-                new SettingsSync().execute(sensorPref);
+            Boolean multiplePref = intent.getBooleanExtra(MULTIPLE_PREFERENCES_UPDATED, false);
+            if (multiplePref) {
+                syncAllPreferences();
+            } else {
+                Preference sensorPref = findPreference(prefKey);
+                if (sensorPref != null) {
+                    new SettingsSync().execute(sensorPref);
+                }
             }
         }
     }
@@ -183,14 +206,20 @@ public class Settings_Page extends Aware_Activity {
             CheckBoxPreference check = (CheckBoxPreference) findPreference(key);
             check.setChecked(Aware.getSetting(getApplicationContext(), key).equals("true"));
 
-            //update the parent to show active/inactive
-            new Settings_Page.SettingsSync().execute(pref);
+            // Update status of communication events if any of call or message status has been updated
+            if (key.equals(Aware_Preferences.STATUS_CALLS) || key.equals(Aware_Preferences.STATUS_MESSAGES)) {
+                boolean statusCalls = Aware.getSetting(getApplicationContext(), Aware_Preferences.STATUS_CALLS).equals("true");
+                boolean statusMessages = Aware.getSetting(getApplicationContext(), Aware_Preferences.STATUS_MESSAGES).equals("true");
+                Aware.setSetting(getApplicationContext(), Aware_Preferences.STATUS_COMMUNICATION_EVENTS, (statusCalls || statusMessages));
+            }
 
             //Start/Stop sensor
 //            Aware.startAWARE(getApplicationContext());
             //NOTE: Only start/stop the relevant sensor
             Aware.activateSensorFromPreference(getApplicationContext(), key);
 
+            //update the parent to show active/inactive
+            new Settings_Page.SettingsSync().execute(pref);
         }
         if (EditTextPreference.class.isInstance(pref)) {
             EditTextPreference text = (EditTextPreference) findPreference(key);
@@ -202,46 +231,60 @@ public class Settings_Page extends Aware_Activity {
         }
     }
 
-    private void updatePluginIndicators() {
-        // Retrieve all plugins in study config
+    /**
+     * Retrieves and stores all plugins listed in the study configuration (regardless of whether they are enabled or not).
+     * Starts the plugin services if they are enabled.
+     */
+    private void setupPlugins() {
         JSONObject studyConfig = Aware.getStudyConfig(getApplicationContext(), Aware.getSetting(getApplicationContext(), Aware_Preferences.WEBSERVICE_SERVER));
         try {
             JSONArray pluginsList = studyConfig.getJSONArray("plugins");
             for (int i = 0; i < pluginsList.length(); i++) {
                 JSONObject pluginConfig = pluginsList.getJSONObject(i);
                 String pluginKey = pluginConfig.getString("plugin");
+                currentPlugins.add(pluginKey);
+
                 //HACK: For most plugins so far
                 String pluginName = pluginKey.substring(pluginKey.indexOf("plugin"));
                 pluginName = pluginName.replaceAll("\\.", "_");
-                Boolean pluginIsActive = Aware.getSetting(getApplicationContext(), "status_" + pluginName).equalsIgnoreCase("true");
-                // Update plugin icons based on status
-                Preference pluginPref = findPreference(pluginName);
-                try {
-                    Class res = R.drawable.class;
-                    Field field = res.getField("ic_" + pluginName);
-                    int icon_id = field.getInt(null);
-                    Drawable category_icon = ContextCompat.getDrawable(getApplicationContext(), icon_id);
-                    if (category_icon != null) {
-                        int colorId = pluginIsActive ? R.color.settingEnabled : R.color.settingDisabled;
-                        category_icon.setColorFilter(new PorterDuffColorFilter(ContextCompat.getColor(getApplicationContext(), colorId), PorterDuff.Mode.SRC_IN));
-                        pluginPref.setIcon(category_icon);
-                        onContentChanged();
-                    }
-                } catch (NoSuchFieldException | IllegalAccessException e) {
-                    e.printStackTrace();
+                Boolean pluginIsEnabled = Aware.getSetting(getApplicationContext(), "status_" + pluginName).equalsIgnoreCase("true");
+                if (pluginIsEnabled) {
+                    Aware.startPlugin(getApplicationContext(), pluginKey);
                 }
-
             }
         } catch (JSONException e) {
             e.printStackTrace();
         }
     }
 
-    @Override
-    protected void onResume() {
-        super.onResume();
-        prefs.registerOnSharedPreferenceChangeListener(this);
+    /**
+     * Update color indicators corresponding to whether plugins are enabled.
+     */
+    private void updatePluginIndicators() {
+        for (String plugin: currentPlugins) {
+            String pluginName = plugin.substring(plugin.indexOf("plugin"));
+            pluginName = pluginName.replaceAll("\\.", "_");
+            Boolean pluginIsActive = Aware.getSetting(getApplicationContext(), "status_" + pluginName).equalsIgnoreCase("true");
+            // Update plugin icons based on status
+            Preference pluginPref = findPreference(pluginName);
+            try {
+                Class res = R.drawable.class;
+                Field field = res.getField("ic_" + pluginName);
+                int icon_id = field.getInt(null);
+                Drawable category_icon = ContextCompat.getDrawable(getApplicationContext(), icon_id);
+                if (category_icon != null) {
+                    int colorId = pluginIsActive ? R.color.settingEnabled : R.color.settingDisabled;
+                    category_icon.setColorFilter(new PorterDuffColorFilter(ContextCompat.getColor(getApplicationContext(), colorId), PorterDuff.Mode.SRC_IN));
+                    pluginPref.setIcon(category_icon);
+                    onContentChanged();
+                }
+            } catch (NoSuchFieldException | IllegalAccessException e) {
+                e.printStackTrace();
+            }
+        }
+    }
 
+    private void syncAllPreferences() {
         new Settings_Page.SettingsSync().executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR, //use all cores available to process UI faster
                 findPreference(Aware_Preferences.DEVICE_ID),
                 findPreference(Aware_Preferences.DEVICE_LABEL),
@@ -301,7 +344,105 @@ public class Settings_Page extends Aware_Activity {
                 findPreference(Aware_Preferences.FOREGROUND_PRIORITY),
                 findPreference(Aware_Preferences.STATUS_TOUCH)
         );
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        prefs.registerOnSharedPreferenceChangeListener(this);
+
+        syncAllPreferences();
         updatePluginIndicators();
+
+        // Check if there are denied permissions during the first bulk sensor activation
+        Boolean isFirstBulkActivation = (Aware.getSetting(getApplicationContext(), Aware_Preferences.BULK_SERVICE_ACTIVATION)).equals("true");
+        if (isFirstBulkActivation) {
+            String deniedPermissionsStr = Aware.getSetting(getApplicationContext(), Aware_Preferences.DENIED_PERMISSIONS_SERVICES);
+            if (!deniedPermissionsStr.equals("")) {
+                Intent deniedPermissionsIntent = new Intent();
+                deniedPermissionsIntent.setAction(SERVICES_WITH_DENIED_PERMISSIONS);
+                sendBroadcast(deniedPermissionsIntent);
+            }
+        }
+
+        // Rechecks permissions after resuming from application settings from 2 different scenarios
+        // 1 - Resuming after updating one or more permissions from a bulk activation (multiple preferences involved)
+        if (Aware.getSetting(getApplicationContext(), Aware_Preferences.REDIRECTED_TO_LOCAL_PERMISSIONS).equals("true")) {
+            // Reset the state
+            Aware.setSetting(getApplicationContext(), Aware_Preferences.REDIRECTED_TO_LOCAL_PERMISSIONS, false);
+            try {
+                String curDeniedPermissionsStr = Aware.getSetting(getApplicationContext(), Aware_Preferences.DENIED_PERMISSIONS_SERVICES);
+                JSONObject deniedPermissions = new JSONObject(curDeniedPermissionsStr);
+                Iterator<String> permissionIterator = deniedPermissions.keys();
+
+                while (permissionIterator.hasNext()) {
+                    String permission = permissionIterator.next();
+                    // Check for newly granted permissions and remove from the global state
+                    if (ActivityCompat.checkSelfPermission(getApplicationContext(), permission) == PackageManager.PERMISSION_GRANTED) {
+                        permissionIterator.remove();
+                    }
+                }
+
+                // Update global state based on the latest checks
+                Aware.setSetting(getApplicationContext(), Aware_Preferences.DENIED_PERMISSIONS_SERVICES, deniedPermissions.toString());
+                PermissionUtils.disableDeniedPermissionPreferences(getApplicationContext(), this);
+                updatePluginIndicators();
+                syncAllPreferences();
+            } catch (JSONException e) {
+                e.printStackTrace();
+            }
+        }
+        // 2 - Resuming after updating permissions for a single preference
+        else if (Aware.getSetting(getApplicationContext(), Aware_Preferences.REDIRECTED_TO_LOCAL_PERMISSIONS_FROM_SINGLE_PREFERENCE).equals("true")) {
+            Aware.setSetting(getApplicationContext(), Aware_Preferences.REDIRECTED_TO_LOCAL_PERMISSIONS_FROM_SINGLE_PREFERENCE, false);
+            String servicePref = Aware.getSetting(getApplicationContext(), Aware_Preferences.REDIRECTED_SERVICE);
+            String servicePermissionStr = Aware.getSetting(getApplicationContext(), Aware_Preferences.REDIRECTED_PERMISSIONS);
+            ArrayList<String> servicePermissions = new ArrayList<>();
+            if (!servicePermissionStr.equals("")) {
+                servicePermissions = new ArrayList<>(Arrays.asList(servicePermissionStr.split(",")));
+            }
+
+            JSONObject deniedPermissions = null;
+            try {
+                String curDeniedPermissionsStr = Aware.getSetting(getApplicationContext(), Aware_Preferences.DENIED_PERMISSIONS_SERVICES);
+                deniedPermissions = new JSONObject(curDeniedPermissionsStr);
+            } catch (JSONException e) {
+                e.printStackTrace();
+            }
+
+            boolean allPermissionsGranted = true;
+            for (String p: servicePermissions) {
+                if (!(ActivityCompat.checkSelfPermission(getApplicationContext(), p) == PackageManager.PERMISSION_GRANTED)) {
+                    allPermissionsGranted = false;
+                    break;
+                } else if (deniedPermissions != null && deniedPermissions.has(p))  {
+                    deniedPermissions.remove(p);
+                }
+            }
+
+            if (deniedPermissions != null) {
+                Aware.setSetting(getApplicationContext(), Aware_Preferences.DENIED_PERMISSIONS_SERVICES, deniedPermissions.toString());
+            }
+
+            if (!allPermissionsGranted) {
+                PermissionUtils.disableService(getApplicationContext(), servicePref, this);
+                updatePluginIndicators();
+                syncAllPreferences();
+            } else {
+                if (PluginsManager.isInstalled(getApplicationContext(), servicePref) != null) {
+                    Aware.startPlugin(getApplicationContext(), servicePref);
+                    updatePluginIndicators();
+                } else {
+                    for (ArrayList<String> sensorPrefs: SENSOR_PREFERENCE_MAPPINGS.values()) {
+                        if (sensorPrefs.contains(servicePref)) {
+                            Aware.activateSensorFromPreference(getApplicationContext(), servicePref);
+                            new SettingsSync().execute(findPreference(servicePref));
+                            break;
+                        }
+                    }
+                }
+            }
+        }
     }
 
     @Override
@@ -342,8 +483,9 @@ public class Settings_Page extends Aware_Activity {
     protected void onDestroy() {
         super.onDestroy();
         unregisterReceiver(pluginsListener);
-        unregisterReceiver(servicePermissionResultReceiver);
+        unregisterReceiver(singleServicePermissionReceiver);
         unregisterReceiver(sensorPreferenceListener);
+        unregisterReceiver(deniedPermissionsReceiver);
     }
 
     private class SettingsSync extends AsyncTask<Preference, Preference, Void> {
@@ -406,6 +548,7 @@ public class Settings_Page extends Aware_Activity {
                             sensorStatuses.add(child.getKey());
                             if (child.isChecked()) {
                                 isActive = true;
+                                break;
                             }
                         }
                     }
