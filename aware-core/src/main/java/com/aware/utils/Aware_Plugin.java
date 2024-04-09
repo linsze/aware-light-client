@@ -144,16 +144,23 @@ public class Aware_Plugin extends Service {
         //HACK: Not all permissions are granted but they have been requested
         // Send broadcast to activity to display a dialog
         if (!PERMISSIONS_OK) {
+            String className = getClass().getName();
+            className = className.substring(0, className.indexOf(".Plugin"));
             if (intent != null && intent.getAction() != null && intent.getAction().equals(ACTION_AWARE_PERMISSIONS_CHECK)) {
-                Intent cantStartPluginIntent = new Intent();
-                cantStartPluginIntent.setAction(SERVICE_FULL_PERMISSIONS_NOT_GRANTED);
-                cantStartPluginIntent.putExtra(SERVICE_NAME, getClass().getName());
-                cantStartPluginIntent.putExtra(UNGRANTED_PERMISSIONS, PENDING_PERMISSIONS);
-                sendBroadcast(cantStartPluginIntent);
+                Boolean isFirstBulkServiceActivation = Aware.getSetting(getApplicationContext(), Aware_Preferences.BULK_SERVICE_ACTIVATION).equals("true");
+                if (!isFirstBulkServiceActivation) {
+                    Intent cantStartPluginIntent = new Intent();
+                    cantStartPluginIntent.setAction(SERVICE_FULL_PERMISSIONS_NOT_GRANTED);
+                    cantStartPluginIntent.putExtra(SERVICE_NAME, className);
+                    cantStartPluginIntent.putExtra(UNGRANTED_PERMISSIONS, PENDING_PERMISSIONS);
+                    sendBroadcast(cantStartPluginIntent);
+                } else {
+                    PermissionUtils.addServiceToDeniedPermission(getApplicationContext(), className, PENDING_PERMISSIONS);
+                }
                 stopSelf();
                 return START_NOT_STICKY;
             } else if (PENDING_PERMISSIONS.size() > 0) {
-                if (PermissionUtils.checkPermissionServiceQueue(getApplicationContext(), getClass().getName())) {
+                if (PermissionUtils.checkPermissionServiceQueue(getApplicationContext(), className)) {
                     Intent permissions = new Intent(this, PermissionsHandler.class);
                     //HACK: Modified to only request for additional permissions that were not granted initially
                     permissions.putExtra(PermissionsHandler.EXTRA_REQUIRED_PERMISSIONS, PENDING_PERMISSIONS);

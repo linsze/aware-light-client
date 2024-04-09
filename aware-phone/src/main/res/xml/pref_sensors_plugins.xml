@@ -42,7 +42,7 @@ Refer to pref_aware_light.xml for all other components.
                 android:key="status_significant_motion"
                 android:persistent="true"
                 android:dependency="status_accelerometer"
-                android:summary="Log motion events. Saves battery life, stops motion sensors logs if idle!"
+                android:summary="Only log motion events. Saves battery life, stops motion sensors logs if idle!"
                 android:title="Significant motion only" />
         </PreferenceScreen>
         <PreferenceScreen
@@ -112,7 +112,7 @@ Refer to pref_aware_light.xml for all other components.
             android:title="Bluetooth">
             <EditTextPreference
                 android:title="Additional permissions required"
-                android:summary="Bluetooth scanning, access to approximate location" />
+                android:summary="Access to approximate location" />
             <CheckBoxPreference
                 android:defaultValue="false"
                 android:key="status_bluetooth"
@@ -136,7 +136,7 @@ Refer to pref_aware_light.xml for all other components.
             android:title="Communication">
             <EditTextPreference
                 android:title="Additional permissions required"
-                android:summary="Access to read contacts, call logs, and text messages" />
+                android:summary="Access to phone, call logs, and text messages" />
             <CheckBoxPreference
                 android:defaultValue="false"
                 android:key="status_calls"
@@ -162,8 +162,8 @@ Refer to pref_aware_light.xml for all other components.
                 android:defaultValue="false"
                 android:key="status_location_gps"
                 android:persistent="true"
-                android:summary="Estimated location latitude, longitude, altitude etc."
-                android:title="GPS tracking" />
+                android:summary="Estimate location latitude, longitude, altitude etc. based on GPS"
+                android:title="GPS estimates" />
             <ListPreference
                 android:defaultValue="180"
                 android:key="frequency_location_gps"
@@ -177,8 +177,8 @@ Refer to pref_aware_light.xml for all other components.
                 android:defaultValue="false"
                 android:key="status_location_network"
                 android:persistent="true"
-                android:summary="Location tracking via cell tower and Wi-Fi"
-                android:title="Network tracking" />
+                android:summary="Estimate location based on cellular and Wi-Fi networks"
+                android:title="Network estimates" />
             <ListPreference
                 android:defaultValue="300"
                 android:key="frequency_location_network"
@@ -188,6 +188,12 @@ Refer to pref_aware_light.xml for all other components.
                 android:entryValues="@array/sampling_frequency_values_second"
                 android:summary="Default: every 5 minutes"
                 android:title="Sampling frequency" />
+            <CheckBoxPreference
+                android:defaultValue="false"
+                android:key="status_location_passive"
+                android:persistent="true"
+                android:summary="Does not actively track locations, only use locations requested by other existing apps"
+                android:title="Passive location" />
         </PreferenceScreen>
         <PreferenceScreen
             android:icon="@drawable/ic_plugin_device_usage"
@@ -233,21 +239,6 @@ Refer to pref_aware_light.xml for all other components.
                 android:persistent="true"
                 android:summary="Texts on screen (except passwords) during interactions"
                 android:title="Interacted text content" />
-        </PreferenceScreen>
-        <PreferenceScreen
-            android:icon="@drawable/ic_action_esm"
-            android:key="esm"
-            android:summary="Receive prompts to assess current behaviors and experiences"
-            android:title="Self assessments">
-            <EditTextPreference
-                android:title="Additional permissions required"
-                android:summary="None" />
-            <CheckBoxPreference
-                android:defaultValue="false"
-                android:key="status_esm"
-                android:persistent="true"
-                android:summary="Allow short retrospective prompts at various times of the day"
-                android:title="Enabled" />
         </PreferenceScreen>
         <PreferenceScreen
             android:icon="@drawable/ic_action_wifi"

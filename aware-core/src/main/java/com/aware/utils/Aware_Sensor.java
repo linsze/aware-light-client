@@ -5,7 +5,6 @@ import static com.aware.utils.PermissionUtils.MANDATORY_PERMISSIONS_GRANTED;
 import static com.aware.utils.PermissionUtils.SERVICE_FULL_PERMISSIONS_NOT_GRANTED;
 import static com.aware.utils.PermissionUtils.SERVICE_NAME;
 import static com.aware.utils.PermissionUtils.UNGRANTED_PERMISSIONS;
-import static com.aware.utils.PermissionUtils.resetPermissionStatuses;
 
 import android.Manifest;
 import android.app.Service;
@@ -144,14 +143,15 @@ public class Aware_Sensor extends Service {
         // Send broadcast to activity to display a dialog
         if (!PERMISSIONS_OK) {
             if (intent != null && intent.getAction() != null && intent.getAction().equals(ACTION_AWARE_PERMISSIONS_CHECK)) {
-//                if (getClass().getName().contains("Scheduler")) {
-                Intent cantRunSchedulerIntent = new Intent(SERVICE_FULL_PERMISSIONS_NOT_GRANTED);
-                cantRunSchedulerIntent.putExtra(SERVICE_NAME, getClass().getName());
-                cantRunSchedulerIntent.putExtra(UNGRANTED_PERMISSIONS, PENDING_PERMISSIONS);
-                sendBroadcast(cantRunSchedulerIntent);
-//                } else {
-//                    addServiceToDeniedPermission(getApplicationContext(), getClass().getName(), PENDING_PERMISSIONS);
-//                }
+                Boolean isFirstBulkServiceActivation = Aware.getSetting(getApplicationContext(), Aware_Preferences.BULK_SERVICE_ACTIVATION).equals("true");
+                if (getClass().getName().contains("Scheduler") || !isFirstBulkServiceActivation) {
+                    Intent cantRunSchedulerIntent = new Intent(SERVICE_FULL_PERMISSIONS_NOT_GRANTED);
+                    cantRunSchedulerIntent.putExtra(SERVICE_NAME, getClass().getName());
+                    cantRunSchedulerIntent.putExtra(UNGRANTED_PERMISSIONS, PENDING_PERMISSIONS);
+                    sendBroadcast(cantRunSchedulerIntent);
+                } else if (isFirstBulkServiceActivation) {
+                    PermissionUtils.addServiceToDeniedPermission(getApplicationContext(), getClass().getName(), PENDING_PERMISSIONS);
+                }
                 stopSelf();
                 return START_NOT_STICKY;
             } else if (PENDING_PERMISSIONS.size() > 0) {
@@ -191,8 +191,8 @@ public class Aware_Sensor extends Service {
         //Unregister Context Broadcaster
         if (contextBroadcaster != null) unregisterReceiver(contextBroadcaster);
 
-        // Resets request status for additional permissions
-        resetPermissionStatuses(getApplicationContext(), PENDING_PERMISSIONS);
+       // Resets request status for additional permissions
+       PermissionUtils.resetPermissionStatuses(getApplicationContext(), PENDING_PERMISSIONS);
     }
 
     /**

@@ -31,20 +31,29 @@ import com.aware.phone.R;
 import com.aware.ui.PermissionsHandler;
 import com.aware.utils.PermissionUtils;
 
+import java.lang.reflect.Field;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashMap;
 import java.util.Hashtable;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
+import androidx.core.app.ActivityCompat;
 import androidx.core.app.NotificationCompat;
 import androidx.core.content.PermissionChecker;
 
 import static com.aware.Aware.AWARE_NOTIFICATION_IMPORTANCE_GENERAL;
 import static com.aware.Aware.TAG;
 import static com.aware.Aware.setNotificationProperties;
+import static com.aware.utils.PermissionUtils.SERVICES_WITH_DENIED_PERMISSIONS;
 import static com.aware.utils.PermissionUtils.SERVICE_FULL_PERMISSIONS_NOT_GRANTED;
+
+import org.json.JSONException;
+import org.json.JSONObject;
 
 /**
  * Main page (Home) that provides the study description and navigation instructions.
@@ -60,8 +69,7 @@ public class Aware_Light_Client extends Aware_Activity {
 
     private final Aware.AndroidPackageMonitor packageMonitor = new Aware.AndroidPackageMonitor();
 
-    private final PermissionUtils.ServicePermissionResultReceiver servicePermissionResultReceiver = new PermissionUtils.ServicePermissionResultReceiver(Aware_Light_Client.this);
-
+    private final PermissionUtils.SingleServicePermissionReceiver singleServicePermissionReceiver = new PermissionUtils.SingleServicePermissionReceiver(Aware_Light_Client.this);
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -125,7 +133,7 @@ public class Aware_Light_Client extends Aware_Activity {
         boolean PERMISSIONS_OK = true;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             for (String p : REQUIRED_PERMISSIONS) {
-                if (PermissionChecker.checkSelfPermission(this, p) != PermissionChecker.PERMISSION_GRANTED) {
+                if (ActivityCompat.checkSelfPermission(this, p) != PackageManager.PERMISSION_GRANTED) {
                     PERMISSIONS_OK = false;
                     break;
                 }
@@ -150,7 +158,7 @@ public class Aware_Light_Client extends Aware_Activity {
 
         IntentFilter permissionResults = new IntentFilter();
         permissionResults.addAction(SERVICE_FULL_PERMISSIONS_NOT_GRANTED);
-        registerReceiver(servicePermissionResultReceiver, permissionResults);
+        registerReceiver(singleServicePermissionReceiver, permissionResults);
     }
 
     @Override
@@ -297,7 +305,7 @@ public class Aware_Light_Client extends Aware_Activity {
         Log.d("AWARE-Light_Client", "AWARE-Light interface cleaned from the list of frequently used apps");
         super.onDestroy();
         unregisterReceiver(packageMonitor);
-        unregisterReceiver(servicePermissionResultReceiver);
+        unregisterReceiver(singleServicePermissionReceiver);
     }
 
     private void hideUnusedPreferences() {

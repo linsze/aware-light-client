@@ -279,8 +279,6 @@ public class StudyUtils extends IntentService {
                 Aware.setSetting(context, Aware_Preferences.DB_PASSWORD, input_password);
             }
 
-
-
             // Set study information
             if (insertCompliance) {
                 ContentValues studyData = new ContentValues();
@@ -339,6 +337,12 @@ public class StudyUtils extends IntentService {
             }
         }
 
+        //NOTE: Status of communication events is dependent on both status of calls and messages
+        boolean callStatus = Aware.getSetting(context, Aware_Preferences.STATUS_CALLS).equals("true");
+        boolean messageStatus =  Aware.getSetting(context, Aware_Preferences.STATUS_MESSAGES).equals("true");
+        Aware.setSetting(context, Aware_Preferences.STATUS_COMMUNICATION_EVENTS, (callStatus || messageStatus));
+
+
         //Set the plugins' settings now
         ArrayList<String> active_plugins = new ArrayList<>();
         for (int i = 0; i < plugins.length(); i++) {
@@ -393,15 +397,13 @@ public class StudyUtils extends IntentService {
 
         for (String package_name : active_plugins) {
             PackageInfo installed = PluginsManager.isInstalled(context, package_name);
-            if (installed != null) {
-                Aware.startPlugin(context, package_name);
-            } else {
+            if (installed == null) {
                 Aware.downloadPlugin(context, package_name, null, false);
             }
         }
 
-        Intent aware = new Intent(context, Aware.class);
-        context.startService(aware);
+        // Intent aware = new Intent(context, Aware.class);
+        // context.startService(aware);
 
         //Send data to server
         Intent sync = new Intent(Aware.ACTION_AWARE_SYNC_DATA);

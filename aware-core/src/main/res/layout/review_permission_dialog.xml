@@ -3,30 +3,27 @@
     android:orientation="vertical" android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:layout_margin="20dp">
-
     <androidx.recyclerview.widget.RecyclerView
-        android:id="@+id/service_permissions"
+        android:id="@+id/rc_permissions"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:layout_marginVertical="10dp"
         android:layout_marginHorizontal="20dp"
-         />
-
+        />
     <TextView
         android:id="@+id/service_title"
         android:layout_height="match_parent"
         android:layout_width="match_parent"
         android:layout_marginHorizontal="20dp"
-        android:text="Would you like to update the permissions?"
+        android:text="Would you like to update the permissions in the app settings?"
         android:textAppearance="@style/TextAppearance.MaterialComponents.Body2"
         />
-
     <TextView
         android:id="@+id/exit_warning"
         android:layout_height="match_parent"
         android:layout_width="match_parent"
         android:layout_marginHorizontal="20dp"
-        android:text="The app may exit if you refuse to update the permissions."
+        android:text="Selecting NO will disable the relevant sensing on your behalf."
         android:textStyle="italic"
         android:textColor="@android:color/holo_red_dark"
         android:textAppearance="@style/TextAppearance.MaterialComponents.Body2"
