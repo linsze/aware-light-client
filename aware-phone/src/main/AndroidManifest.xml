@@ -73,6 +73,14 @@
             android:noHistory="true"
             android:theme="@style/Theme.Aware" />
         <activity
+            android:name=".ui.Data"
+            android:configChanges="keyboardHidden|orientation|screenSize"
+            android:icon="@mipmap/ic_launcher_stream"
+            android:label="Data stream"
+            android:launchMode="singleTop"
+            android:noHistory="true"
+            android:theme="@style/Theme.Aware" />
+        <activity
             android:name=".ui.Configure"
             android:configChanges="keyboardHidden|orientation|screenSize"
             android:label="Join study"

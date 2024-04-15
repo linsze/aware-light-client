@@ -4,15 +4,34 @@
     android:layout_height="match_parent"
     android:gravity="center_horizontal">
 
-    <Button
-        android:id="@+id/btn_sync_study_config"
-        android:layout_width="wrap_content"
+    <LinearLayout
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_below="@android:id/list"
-        android:background="@color/accent"
-        android:text="@string/sync_study_config"
-        android:textColor="@android:color/white"
-        android:paddingHorizontal="50dp"
-        android:layout_marginVertical="10dp" />
+        android:orientation="vertical"
+        android:layout_marginHorizontal="20dp"
+        android:paddingHorizontal="15dp"
+        android:paddingVertical="10dp"
+        android:background="@color/sectionBackgroundColor" >
+
+        <TextView
+            android:id="@+id/app_features_bullet"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="5dp"
+            android:text="Check for configuration updates by the research team"
+            android:textAppearance="@style/TextAppearance.AppCompat.Body1" />
+        <Button
+            android:id="@+id/btn_sync_study_config"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:layout_below="@android:id/list"
+            android:background="@color/accent"
+            android:text="@string/sync_study_config"
+            android:textColor="@android:color/white"
+            android:paddingHorizontal="50dp"
+            android:layout_marginVertical="10dp" />
+    </LinearLayout>
+
 
 </LinearLayout>

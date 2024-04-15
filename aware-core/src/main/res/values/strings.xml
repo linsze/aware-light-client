@@ -76,6 +76,6 @@
 
     <string name="study_description">Thank you for your interest to participate in the study. The research aims to understand how contextual data collected from personal devices support understanding of personal behaviors. This means that certain hardware sensors in your device might be activated and you\'d have to allow the application to run passively in the background. All collected data will be anonymized and stored in the university\'s locally hosted database. Identifiable information such as your personal details, browsing content, and conversations will not be collected. We greatly value your privacy and consent, so should you feel uncomfortable at any time, you are free to activate/deactivate certain sensors or quit the study. Please do not hesitate to reach out to the research team if you have further questions.</string>
     <string name="app_features">Passively collects contextual information \nPrompts self-assessed questions</string>
-    <string name="app_user_control">Update sensor configuration in Settings \nCheck study configuration updates by research team \nQuit study in Settings</string>
-    <string name="app_future_features">View personal patterns in Data</string>
+    <string name="app_user_control">Update sensor configuration in Settings</string>
+    <string name="app_future_features">View collected data in Data</string>
 </resources>

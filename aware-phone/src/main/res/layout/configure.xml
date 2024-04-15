@@ -13,7 +13,7 @@
         android:layout_width="wrap_content"
         android:layout_marginTop="20dp"
         android:text="Welcome!"
-        android:textAppearance="@style/TextAppearance.MaterialComponents.Headline6"
+        android:textAppearance="@style/TextAppearance.AppCompat.Headline"
         />
 
     <TextView
@@ -21,50 +21,50 @@
         android:layout_width="wrap_content"
         android:layout_marginTop="10dp"
         android:text="Please enter the details provided by the research team."
-        android:textAppearance="@style/TextAppearance.MaterialComponents.Body1"
+        android:textAppearance="@style/TextAppearance.AppCompat.Subhead"
         />
 
     <TextView
         android:layout_height="wrap_content"
         android:layout_width="wrap_content"
-        android:layout_marginTop="10dp"
-        android:text="URL:"
-        android:textAppearance="@style/TextAppearance.MaterialComponents.Subtitle1"
+        android:layout_marginTop="20dp"
+        android:text="Config URL:"
+        android:textAppearance="@style/TextAppearance.AppCompat.Subhead"
         />
-    <TextView
-        android:id="@+id/onboarding_heading"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginEnd="5dp"
-        android:text="To retrieve study configuration"
-        android:textAppearance="@style/TextAppearance.AppCompat.Small" />
+<!--    <TextView-->
+<!--        android:id="@+id/onboarding_heading"-->
+<!--        android:layout_width="match_parent"-->
+<!--        android:layout_height="wrap_content"-->
+<!--        android:layout_marginEnd="5dp"-->
+<!--        android:text="To retrieve study configuration"-->
+<!--        android:textAppearance="@style/TextAppearance.AppCompat.Small" />-->
     <EditText
         android:layout_height="wrap_content"
         android:layout_width="match_parent"
         android:id="@+id/et_join_study_url"
         android:inputType="textMultiLine"
-        android:textAppearance="@style/TextAppearance.MaterialComponents.Body2"
+        android:textAppearance="@style/TextAppearance.MaterialComponents.Body1"
         />
     <TextView
         android:id="@+id/onboarding_heading"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="20dp"
-        android:text="Study identifier:"
-        android:textAppearance="@style/TextAppearance.MaterialComponents.Subtitle1" />
-    <TextView
-        android:id="@+id/onboarding_heading"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginEnd="5dp"
-        android:text="To map device to data without storing personal details"
-        android:textAppearance="@style/TextAppearance.AppCompat.Small" />
+        android:text="Participant identifier:"
+        android:textAppearance="@style/TextAppearance.AppCompat.Subhead" />
+<!--    <TextView-->
+<!--        android:id="@+id/onboarding_heading"-->
+<!--        android:layout_width="match_parent"-->
+<!--        android:layout_height="wrap_content"-->
+<!--        android:layout_marginEnd="5dp"-->
+<!--        android:text="To map device to data without storing personal details"-->
+<!--        android:textAppearance="@style/TextAppearance.AppCompat.Small" />-->
     <EditText
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:id="@+id/participant_label"
         android:inputType="textEmailAddress"
-        android:textAppearance="@style/TextAppearance.MaterialComponents.Body2"    />
+        android:textAppearance="@style/TextAppearance.MaterialComponents.Body1"    />
 
 <!--    <TextView-->
 <!--        android:layout_height="wrap_content"-->

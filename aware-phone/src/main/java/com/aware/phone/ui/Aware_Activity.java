@@ -66,10 +66,15 @@ public abstract class Aware_Activity extends AppCompatPreferenceActivity {
                             startActivity(settingsUI);
                             break;
                         case R.id.data: //Stream
-                            Intent dataUI = new Intent(getApplicationContext(), Stream_UI.class);
+                            Intent dataUI = new Intent(getApplicationContext(), Data.class);
                             dataUI.putExtra("page", 2);
                             startActivity(dataUI);
                             break;
+//                        case R.id.data: //Stream
+//                            Intent dataUI = new Intent(getApplicationContext(), Stream_UI.class);
+//                            dataUI.putExtra("page", 2);
+//                            startActivity(dataUI);
+//                            break;
                     }
                     return true;
                 }

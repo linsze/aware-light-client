@@ -269,15 +269,15 @@ Refer to pref_aware_light.xml for all other components.
         android:key="device_ids"
         android:title="Device">
         <EditTextPreference
+            android:key="device_label"
+            android:persistent="true"
+            android:summary="%s"
+            android:title="Participant identifier" />
+        <EditTextPreference
             android:key="device_id"
             android:persistent="true"
             android:selectable="false"
             android:summary="%s"
-            android:title="AWARE Device ID" />
-        <EditTextPreference
-            android:key="device_label"
-            android:persistent="true"
-            android:summary="%s"
-            android:title="Device label" />
+            android:title="Device ID" />
     </PreferenceCategory>
 </PreferenceScreen>
