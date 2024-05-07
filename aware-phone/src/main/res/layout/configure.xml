@@ -1,106 +1,112 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:tools="http://schemas.android.com/tools"
-    tools:context=".ui.Aware_Light_Client"
-    android:id="@+id/aware_container"
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
-    android:layout_height="match_parent"
-    android:orientation="vertical"
-    android:layout_marginHorizontal="20dp">
+    android:layout_height="match_parent">
+    <LinearLayout
+        xmlns:tools="http://schemas.android.com/tools"
+        tools:context=".ui.Aware_Light_Client"
+        android:id="@+id/aware_container"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:layout_marginHorizontal="20dp"
+        android:isScrollContainer="true">
 
-    <TextView
-        android:layout_height="wrap_content"
-        android:layout_width="wrap_content"
-        android:layout_marginTop="20dp"
-        android:text="Welcome!"
-        android:textAppearance="@style/TextAppearance.AppCompat.Headline"
-        />
+        <TextView
+            android:layout_height="wrap_content"
+            android:layout_width="wrap_content"
+            android:layout_marginTop="20dp"
+            android:text="Welcome!"
+            android:textAppearance="@style/TextAppearance.AppCompat.Headline"
+            />
 
-    <TextView
-        android:layout_height="wrap_content"
-        android:layout_width="wrap_content"
-        android:layout_marginTop="10dp"
-        android:text="Please enter the details provided by the research team."
-        android:textAppearance="@style/TextAppearance.AppCompat.Subhead"
-        />
+        <TextView
+            android:layout_height="wrap_content"
+            android:layout_width="wrap_content"
+            android:layout_marginTop="10dp"
+            android:text="Please enter the details provided by the research team."
+            android:textAppearance="@style/TextAppearance.AppCompat.Subhead"
+            />
 
-    <TextView
-        android:layout_height="wrap_content"
-        android:layout_width="wrap_content"
-        android:layout_marginTop="20dp"
-        android:text="Config URL:"
-        android:textAppearance="@style/TextAppearance.AppCompat.Subhead"
-        />
-<!--    <TextView-->
-<!--        android:id="@+id/onboarding_heading"-->
-<!--        android:layout_width="match_parent"-->
-<!--        android:layout_height="wrap_content"-->
-<!--        android:layout_marginEnd="5dp"-->
-<!--        android:text="To retrieve study configuration"-->
-<!--        android:textAppearance="@style/TextAppearance.AppCompat.Small" />-->
-    <EditText
-        android:layout_height="wrap_content"
-        android:layout_width="match_parent"
-        android:id="@+id/et_join_study_url"
-        android:inputType="textMultiLine"
-        android:textAppearance="@style/TextAppearance.MaterialComponents.Body1"
-        />
-    <TextView
-        android:id="@+id/onboarding_heading"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="20dp"
-        android:text="Participant identifier:"
-        android:textAppearance="@style/TextAppearance.AppCompat.Subhead" />
-<!--    <TextView-->
-<!--        android:id="@+id/onboarding_heading"-->
-<!--        android:layout_width="match_parent"-->
-<!--        android:layout_height="wrap_content"-->
-<!--        android:layout_marginEnd="5dp"-->
-<!--        android:text="To map device to data without storing personal details"-->
-<!--        android:textAppearance="@style/TextAppearance.AppCompat.Small" />-->
-    <EditText
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:id="@+id/participant_label"
-        android:inputType="textEmailAddress"
-        android:textAppearance="@style/TextAppearance.MaterialComponents.Body1"    />
+        <TextView
+            android:layout_height="wrap_content"
+            android:layout_width="wrap_content"
+            android:layout_marginTop="20dp"
+            android:text="Config URL:"
+            android:textAppearance="@style/TextAppearance.AppCompat.Subhead"
+            />
+        <!--    <TextView-->
+        <!--        android:id="@+id/onboarding_heading"-->
+        <!--        android:layout_width="match_parent"-->
+        <!--        android:layout_height="wrap_content"-->
+        <!--        android:layout_marginEnd="5dp"-->
+        <!--        android:text="To retrieve study configuration"-->
+        <!--        android:textAppearance="@style/TextAppearance.AppCompat.Small" />-->
+        <EditText
+            android:layout_height="wrap_content"
+            android:layout_width="match_parent"
+            android:id="@+id/et_join_study_url"
+            android:inputType="textMultiLine"
+            android:textAppearance="@style/TextAppearance.MaterialComponents.Body1"
+            />
+        <TextView
+            android:id="@+id/onboarding_heading"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="20dp"
+            android:text="Participant identifier:"
+            android:textAppearance="@style/TextAppearance.AppCompat.Subhead" />
+        <!--    <TextView-->
+        <!--        android:id="@+id/onboarding_heading"-->
+        <!--        android:layout_width="match_parent"-->
+        <!--        android:layout_height="wrap_content"-->
+        <!--        android:layout_marginEnd="5dp"-->
+        <!--        android:text="To map device to data without storing personal details"-->
+        <!--        android:textAppearance="@style/TextAppearance.AppCompat.Small" />-->
+        <EditText
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:id="@+id/participant_label"
+            android:inputType="textEmailAddress"
+            android:textAppearance="@style/TextAppearance.MaterialComponents.Body1"    />
 
-<!--    <TextView-->
-<!--        android:layout_height="wrap_content"-->
-<!--        android:layout_width="wrap_content"-->
-<!--        android:layout_marginTop="20dp"-->
-<!--        android:text="Mandatory permissions"-->
-<!--        android:textAppearance="@style/TextAppearance.MaterialComponents.Body1"-->
-<!--        />-->
-<!--    <TextView-->
-<!--        android:id="@+id/onboarding_heading"-->
-<!--        android:layout_width="match_parent"-->
-<!--        android:layout_height="wrap_content"-->
-<!--        android:layout_marginEnd="5dp"-->
-<!--        android:text="The application is unable to run if the following permissions are not granted."-->
-<!--        android:textAppearance="@style/TextAppearance.AppCompat.Small" />-->
-<!--    <androidx.recyclerview.widget.RecyclerView-->
-<!--        android:id="@+id/rv_mandatory_permissions"-->
-<!--        android:layout_width="match_parent"-->
-<!--        android:layout_height="wrap_content"-->
-<!--        android:layout_gravity="center_vertical"-->
-<!--        android:layout_marginTop="10dp"-->
-<!--        android:padding="5dp">-->
-<!--    </androidx.recyclerview.widget.RecyclerView>-->
-    <Button
-        android:id="@+id/btn_configure"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_below="@android:id/list"
-        android:background="@color/settingDisabled"
-        android:text="@string/next"
-        android:textColor="@android:color/white"
-        android:layout_marginTop="50dp"
-        android:layout_marginHorizontal="80dp"
-        android:enabled="false" />
-    <ListView
-        android:id="@android:id/list"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"/>
-</LinearLayout>
+        <!--    <TextView-->
+        <!--        android:layout_height="wrap_content"-->
+        <!--        android:layout_width="wrap_content"-->
+        <!--        android:layout_marginTop="20dp"-->
+        <!--        android:text="Mandatory permissions"-->
+        <!--        android:textAppearance="@style/TextAppearance.MaterialComponents.Body1"-->
+        <!--        />-->
+        <!--    <TextView-->
+        <!--        android:id="@+id/onboarding_heading"-->
+        <!--        android:layout_width="match_parent"-->
+        <!--        android:layout_height="wrap_content"-->
+        <!--        android:layout_marginEnd="5dp"-->
+        <!--        android:text="The application is unable to run if the following permissions are not granted."-->
+        <!--        android:textAppearance="@style/TextAppearance.AppCompat.Small" />-->
+        <!--    <androidx.recyclerview.widget.RecyclerView-->
+        <!--        android:id="@+id/rv_mandatory_permissions"-->
+        <!--        android:layout_width="match_parent"-->
+        <!--        android:layout_height="wrap_content"-->
+        <!--        android:layout_gravity="center_vertical"-->
+        <!--        android:layout_marginTop="10dp"-->
+        <!--        android:padding="5dp">-->
+        <!--    </androidx.recyclerview.widget.RecyclerView>-->
+        <Button
+            android:id="@+id/btn_configure"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_below="@android:id/list"
+            android:background="@color/settingDisabled"
+            android:text="@string/next"
+            android:textColor="@android:color/white"
+            android:layout_marginVertical="50dp"
+            android:layout_marginHorizontal="80dp"
+            android:enabled="false" />
+        <ListView
+            android:id="@android:id/list"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"/>
+    </LinearLayout>
+
+</ScrollView>
