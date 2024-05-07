@@ -15,12 +15,16 @@ import mysql.connector
 import numpy as np
 import pandas as pd
 import pytz
+from kneed import KneeLocator
 from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
 from pyspark.sql.types import (FloatType, IntegerType, LongType, StringType,
                                StructField, StructType, TimestampType)
 from pyspark.sql.window import Window
 from scipy.interpolate import interp1d
+from sklearn.cluster import DBSCAN
+from sklearn.metrics import silhouette_score
+from sklearn.neighbors import NearestNeighbors
 
 
 def get_user_table(cursor, table_name, device_id):
@@ -127,8 +131,12 @@ def fill_df_hour_minute(cur_df):
 
 def process_light_data(user_id):
     """
-    Interpolate, smoothen, and clean data based on data type.
-    1. Nearest neighbour interpolation based on https://dl.acm.org/doi/pdf/10.1145/3510029
+    (Continuous)
+    Ambient luminance data: interpolate missing data using nearest neighbour interpolation based on https://dl.acm.org/doi/pdf/10.1145/3510029
+
+    NOTE Assumptions:
+    1. Exclude extremely high luminance from analysis
+    2. Exclude outliers detected from applying rolling average
     """
     parquet_filename = f"{DATA_FOLDER}/{user_id}_light.parquet"
     if not os.path.exists(parquet_filename):
@@ -148,14 +156,16 @@ def process_light_data(user_id):
             .orderBy(F.col("timestamp"))\
             .rangeBetween(-minutes(1), 0))
         
-        # NOTE (Assumption): Ignores extremely high lumination occuring at 01/02/2024 23:06 and outliers based on assumed threshold
+        # NOTE: Ignores extremely high lumination occuring at 01/02/2024 23:06 and outliers based on assumed threshold
         light_df = light_df.filter(F.col("double_light_lux") <= 2000)
         light_df = light_df.withColumn("rolling_light_lux", F.mean("double_light_lux").over(smooth_window))
         light_df = light_df.withColumn("residuals", F.col("double_light_lux") - F.col("rolling_light_lux"))
 
+        # NOTE: Exclude outliers based on standard deviation of difference between initial value and rolling average
         outlier_threshold = 2 * light_df.select(F.stddev("residuals")).first()[0]
         light_df = light_df.withColumn("potential_outlier", F.when((F.abs("residuals") > outlier_threshold), True).otherwise(False))
         light_df = light_df.filter(F.col("potential_outlier") == False)
+
         light_df = light_df.groupBy(*time_cols)\
             .agg(F.mean("double_light_lux").alias("average_lux_minute"))\
             .withColumn("hour", F.col("hour").cast(IntegerType()))\
@@ -195,8 +205,7 @@ def process_light_data(user_id):
 
 def process_noise_data(user_id):
     """
-    Interpolate, smoothen, and clean data based on data type.
-    1. Nearest neighbour interpolation based on https://dl.acm.org/doi/pdf/10.1145/3510029
+    Ambient audio data: interpolate missing data using nearest neighbour interpolation based on https://dl.acm.org/doi/pdf/10.1145/3510029
     """
     parquet_filename = f"{DATA_FOLDER}/{user_id}_noise.parquet"
     if not os.path.exists(parquet_filename):
@@ -251,7 +260,9 @@ def process_noise_data(user_id):
 
 def process_activity_data(user_id):
     """
+    (Continuous)
     Activity recognition data: interpolate missing values based on the previous row
+
     NOTE Assumptions:
     1. Fill in missing values with "still" (activity_type 3) with the assumption that the device is static hence no new entries were recorded to save battery.
     """
@@ -297,6 +308,7 @@ def process_activity_data(user_id):
 
 def process_screen_data(user_id):
     """
+    (Event-based)
     Screen status data: currently does not attempt to identify missing data
     NOTE: Device usage plugin readily provides usage (screen unlocked) and non-usage duration (screen off)
     """
@@ -317,11 +329,201 @@ def process_screen_data(user_id):
         .withColumn("double_elapsed_device_off", F.col("double_elapsed_device_off").cast(LongType()))\
         .sort(time_cols)
 
+def process_application_usage_data(user_id):
+    """
+    (Event-based)
+    Application usage: does not attempt to identify missing data
+    1. Combine information from foreground applications and device usage plugin.
+    2. Include: Non-system applications running in the foreground when screen is active.
+    """
+    parquet_filename = f"{DATA_FOLDER}/{user_id}_app_usage.parquet"
+    if not os.path.exists(parquet_filename):
+        phone_use_df = spark.read.option("header", True).csv(f"{DATA_FOLDER}/{user_id}_plugin_device_usage.csv")
+        phone_in_use = phone_use_df.filter(F.col("double_elapsed_device_on") > 0)\
+            .withColumn("timestamp", F.col("timestamp").cast(FloatType()))\
+            .withColumn("start_timestamp", F.col("timestamp") - F.col("double_elapsed_device_on"))\
+            .withColumnRenamed("timestamp", "end_timestamp")
+
+        # Filter off system applications
+        app_usage_df = spark.read.option("header", True).csv(f"{DATA_FOLDER}/{user_id}_applications_foreground.csv")\
+            .filter(F.col("is_system_app") == 0)\
+            .withColumnRenamed("timestamp", "usage_timestamp")
+
+        # Obtain intersect of phone screen in use and having applications running in foreground
+        in_use_app_df = app_usage_df.join(phone_in_use, (phone_in_use["start_timestamp"] <= app_usage_df["usage_timestamp"]) & (phone_in_use["end_timestamp"] >= app_usage_df["usage_timestamp"]))
+        in_use_app_df = in_use_app_df.select(*["package_name", "application_name", "usage_timestamp", "start_timestamp", "end_timestamp"]).dropDuplicates()\
+            .sort("start_timestamp", "usage_timestamp")
+        in_use_app_df.write.parquet(parquet_filename)
+    
+    in_use_app_df = spark.read.parquet(parquet_filename)
+    return in_use_app_df
+
+def process_bluetooth_data(user_id):
+    """
+    (Event-based)
+    Bluetooth data: does not attempt to identify missing data
+    1. RSSI values indicate signal strength: -100 dBm (weaker) to 0 dBm (strongest)
+    """
+    parquet_filename = f"{DATA_FOLDER}/{user_id}_bluetooth.parquet"
+    if not os.path.exists(parquet_filename):
+        bluetooth_df = spark.read.option("header", True).csv(f"{DATA_FOLDER}/{user_id}_bluetooth.csv")
+        bluetooth_df.write.parquet(parquet_filename)
+    
+    bluetooth_df = spark.read.parquet(parquet_filename)
+    
+    occurrence_df = bluetooth_df.groupBy("hour", "bt_address").agg(F.count("*").alias("occurrence"))\
+        .join(bluetooth_df.select("bt_address", "bt_name"), "bt_address")\
+        .dropDuplicates()\
+        .sort(F.col("occurrence").desc())
+    occurrence_df.show()
+
+    return bluetooth_df
+
+def optimize_cluster(loc_df):
+    """
+    Optimizes epsilon and mininum number of points based on silhouette score of clusters from DBSCAN clustering.
+    Reference: https://machinelearningknowledge.ai/tutorial-for-dbscan-clustering-in-python-sklearn/
+    """
+    min_points_decrement = 10
+    num_neighbors = math.floor(
+        len(loc_df) / min_points_decrement) * min_points_decrement
+    best_epsilon = 0
+    best_num_neighbors = 0
+    best_silhouette_score = 0
+    temp_epsilon = 0
+    temp_num_neighbors = 0
+
+    # Optimize epsilon value
+    while num_neighbors > 0:
+        # Distance from each point to its closest neighbour
+        nb_learner = NearestNeighbors(n_neighbors=num_neighbors)
+        nearest_neighbours = nb_learner.fit(loc_df)
+        distances, _ = nearest_neighbours.kneighbors(loc_df)
+        distances = np.sort(distances[:, num_neighbors-1], axis=0)
+
+        # Optimal epsilon value: point with max curvature
+        knee = KneeLocator(np.arange(len(distances)), distances, curve="convex",
+                           direction="increasing", interp_method="polynomial")
+        # knee.plot_knee()
+        # plt.show()
+
+        # Knee not found
+        if knee.knee is None:
+            opt_eps = 0
+        else:
+            opt_eps = round(distances[knee.knee], 3)
+
+        if opt_eps > 0:
+            dbscan_cluster = DBSCAN(eps=opt_eps, min_samples=num_neighbors)
+            dbscan_cluster.fit(loc_df)
+            # Number of clusters
+            labels = dbscan_cluster.labels_
+            n_clusters = len(set(labels))-(1 if -1 in labels else 0)
+            if n_clusters > 1:
+                # Can only calculate silhouette score when there are more than 1 clusters
+                score = silhouette_score(loc_df, labels)
+                if score > best_silhouette_score:
+                    best_epsilon = opt_eps
+                    best_num_neighbors = num_neighbors
+                    best_silhouette_score = score
+            elif n_clusters == 1:
+                # Store temporarily in case only 1 cluster can be found after optimization
+                temp_epsilon = opt_eps
+                temp_num_neighbors = num_neighbors
+
+        num_neighbors -= min_points_decrement
+
+    if best_epsilon == 0:
+        best_epsilon = temp_epsilon
+        best_num_neighbors = temp_num_neighbors
+
+    print(f"Best silhouette score: {best_silhouette_score}")
+    print(f"Best epsilon value: {best_epsilon}")
+    print(f"Best min points: {best_num_neighbors}")
+    return best_epsilon, best_num_neighbors, best_silhouette_score
+
+
+def cluster_locations(loc_df):
+    """
+    Performs DBSCAN clustering on unique combination of latitude and longitude using optimized epsilon values.
+    Reference: https://machinelearningknowledge.ai/tutorial-for-dbscan-clustering-in-python-sklearn/
+    """
+    loc_df = loc_df.select("double_latitude", "double_longitude").distinct()
+    latitude = np.array(loc_df.select("double_latitude").collect()).flatten()
+    longitude = np.array(loc_df.select("double_longitude").collect()).flatten()
+    loc_df = np.transpose(np.vstack([latitude, longitude]))
+    epsilon, min_points, silhouette_score = optimize_cluster(loc_df)
+    if epsilon == 0:
+        return [-1 for i in range(len(loc_df))], min_points, silhouette_score
+    dbscan_cluster = DBSCAN(eps=epsilon, min_samples=min_points)
+    dbscan_cluster.fit(loc_df)
+
+    cluster_df_data = []
+    for index, (lat, long) in enumerate(loc_df):
+        cluster_df_data.append((float(lat), float(long), int(dbscan_cluster.labels_[index])))
+    cluster_df = spark.createDataFrame(cluster_df_data, schema=StructType([StructField("latitude", FloatType()),\
+                                                                           StructField("longitude", FloatType()),\
+                                                                           StructField("cluster_id", IntegerType())]))
+    return cluster_df
+
+
+def process_location_data(user_id):
+    """
+    (Event-based)
+    Location data: does not attempt to identify missing value
+
+    NOTE Assumptions:
+    1. When there are multiple entries in a given minute, retain the entry with the highest accuracy
+    """
+    parquet_filename = f"{DATA_FOLDER}/{user_id}_locations.parquet"
+    if not os.path.exists(parquet_filename):
+        location_df = spark.read.option("header", True).csv(f"{DATA_FOLDER}/{user_id}_locations.csv")
+        float_cols = ["timestamp", "double_latitude", "double_longitude", "double_bearing", "double_speed", "double_altitude", "accuracy"]
+        for col in float_cols:
+            location_df = location_df.withColumn(col, F.col(col).cast(FloatType()))
+        time_cols = ["date", "hour", "minute"]
+        max_accuracy_location = location_df.groupBy(time_cols).agg(F.max(F.col("accuracy")).alias("accuracy"))
+        location_df = location_df.join(max_accuracy_location, time_cols + ["accuracy"])\
+            .dropDuplicates()
+        location_df.write.parquet(parquet_filename)
+    
+    location_df = spark.read.parquet(parquet_filename)
+
+    # # Perform DBSCAN clustering
+    # cluster_df = cluster_locations(location_df)
+
+    # # Number of clusters excluding noise with -1 labels
+    # n_clust = cluster_df.select(F.col("cluster_id")).filter(F.col("cluster_id") != -1).distinct().count()
+    # print(f"Estimated number of clusters: {n_clust}")
+
+    return location_df
+
+
+def process_wifi_data(user_id):
+    """
+    (Event-based)
+    WiFi data: does not attempt to identify missing value
+
+    NOTE Assumptions:
+    1. Only retain unique ssid for nearby WiFi devices at a given time
+    """
+    parquet_filename = f"{DATA_FOLDER}/{user_id}_wifi.parquet"
+    if not os.path.exists(parquet_filename):
+        wifi_df = spark.read.option("header", True).csv(f"{DATA_FOLDER}/{user_id}_wifi.csv")
+        time_cols = ["date", "hour", "minute"]
+        wifi_df = wifi_df.filter(F.col("ssid") != "null").select(*time_cols + ["ssid"]).distinct()\
+            .sort(time_cols)
+        wifi_df.write.parquet(parquet_filename)
+    
+    wifi_df = spark.read.parquet(parquet_filename)
+    return wifi_df
+
 
 def estimate_sleep(user_id):
     """
     Estimate sleep duration based on information from light, noise, activity and phone screen.
-    Current assumptions:
+
+    NOTE Assumptions:
     1. Does not limit to 1 estimated entry per day
     2. Remove those with duration shorter than 1 hour
     """
@@ -360,17 +562,56 @@ def estimate_sleep(user_id):
     # V2
     sleep_df = off_screen.join(dark_env, (F.col("dark_datetime") >= F.col("start_datetime")) & (F.col("dark_datetime") <= F.col("end_datetime")))\
         .join(quiet_env, (F.col("quiet_datetime") >= F.col("start_datetime")) & (F.col("quiet_datetime") <= F.col("end_datetime")))\
-        .join(stationary, (F.col("stationary_datetime") >= F.col("start_datetime")) & (F.col("stationary_datetime") <= F.col("end_datetime")))
+        .join(stationary, (F.col("stationary_datetime") >= F.col("start_datetime")) & (F.col("stationary_datetime") <= F.col("end_datetime")))\
+        .dropDuplicates()
 
     sleep_df = sleep_df.select(*["start_datetime", "end_datetime", "average_lux_minute", "average_decibels_minute"])\
         .dropDuplicates()
     sleep_df = sleep_df.groupBy("start_datetime", "end_datetime").agg(F.mean(F.col("average_decibels_minute")).alias("average_ambient_decibels"), \
                                                                       F.mean(F.col("average_lux_minute")).alias("average_ambient_luminance"))
-    sleep_df = sleep_df.withColumn("duration", F.unix_timestamp(F.col("end_datetime")) - F.unix_timestamp(F.col("start_datetime")))\
-        .filter(F.col("duration") >= 3600)\
+    sleep_df = sleep_df.withColumn("duration (s)", F.unix_timestamp(F.col("end_datetime")) - F.unix_timestamp(F.col("start_datetime")))\
+        .filter(F.col("duration (s)") >= 3600)\
+        .withColumn("duration (hr)", F.col("duration (s)") / 3600)\
+        .withColumn("onset_time", udf_string_datetime(F.col("start_datetime")))\
+        .withColumn("end_time", udf_string_datetime(F.col("end_datetime")))\
         .sort("start_datetime")
     sleep_df.show()
     return sleep_df
+
+def location_with_semantic(user_id):
+    """
+    Combines information from location and wifi data.
+    """
+    location_df = process_location_data(user_id)
+    wifi_df = process_wifi_data(user_id)
+    time_cols = ["date", "hour", "minute"]
+    location_semantic = location_df.select(*time_cols + ["double_latitude", "double_longitude"])\
+        .join(wifi_df, time_cols, "outer").dropDuplicates().sort(time_cols)
+    
+    # Fill in coordinates based on known coordinates and ssid mapping
+    known_mapping = location_semantic.na.drop()
+    average_location_coordinates = known_mapping.groupBy("ssid")\
+        .agg(F.mean("double_latitude").alias("average_latitude"), \
+             F.mean("double_longitude").alias("average_longitude"))
+
+    location_semantic = location_semantic.join(average_location_coordinates, "ssid")\
+        .drop("double_latitude", "double_longitude")\
+        .dropDuplicates().sort(time_cols)
+
+
+def phone_productivity(user_id):
+    """
+    Map screen status to app notifications to infer productivity/distraction.
+
+    NOTE Assumptions:
+    1. Remove screen on (status 1) due to notifications since they are not initiated by people themselves
+    2. 
+    """
+    time_cols = ["date", "hour", "minute"]
+    screen_df = spark.read.option("header", True).csv(f"{DATA_FOLDER}/{user_id}_screen.csv")
+    app_notifications_df = spark.read.option("header", True).csv(f"{DATA_FOLDER}/{user_id}_applications_notifications.csv")
+    notification_screen_on = screen_df.filter(F.col("screen_status") == 1).join(app_notifications_df, time_cols)
+    notification_screen_on.show()
 
 """
 Referenced from StudentLife paper: https://dl.acm.org/doi/abs/10.1145/2632048.2632054
@@ -454,45 +695,65 @@ if __name__ == "__main__":
     sc = spark.sparkContext
 
     ALL_TABLES = ["applications_crashes", "applications_foreground", "applications_history",\
-                  "applications_notifications", "bluetooth", "gsm", "light", "network", "plugin_ambient_noise",\
-                    "plugin_device_usage", "plugin_google_activity_recognition", "screen", "screentext",\
-                        "sensor_accelerometer", "sensor_bluetooth", "sensor_light", "sensor_wifi", "telephony",\
-                            "wifi", "esms"]
-    DATA_FOLDER = "analysis/user_data"
+                    "applications_notifications", "bluetooth", "gsm", "light", "locations", "network",\
+                    "plugin_ambient_noise", "plugin_device_usage", "plugin_google_activity_recognition",\
+                    "screen", "screentext", "sensor_accelerometer", "sensor_bluetooth", "sensor_light",\
+                    "sensor_wifi", "telephony", "wifi", "esms"]
+    DATA_FOLDER = "user_data"
     
     udf_datetime_from_timestamp = F.udf(lambda x: datetime.fromtimestamp(x/1000), TimestampType())
     udf_generate_datetime = F.udf(lambda d, h, m: datetime.strptime(f"{d} {h:02d}:{m:02d}", "%Y-%m-%d %H:%M"), TimestampType())
     udf_get_date_from_datetime = F.udf(lambda x: x.date().strftime("%Y-%m-%d"), StringType())
-
-    with open("analysis/database_config.json", 'r') as file:
-        db_config = json.load(file)
-
-    db_connection = mysql.connector.connect(**db_config)
-    db_cursor = db_connection.cursor(buffered=True)
+    udf_string_datetime = F.udf(lambda x: x.strftime("%Y-%m-%d %H:%M"), StringType())
 
     user_identifier = "pixel3"
+
+    # -- NOTE: Only execute this block when db connection is required --
+    # with open("database_config.json", 'r') as file:
+    #     db_config = json.load(file)
+
+    # db_connection = mysql.connector.connect(**db_config)
+    # db_cursor = db_connection.cursor(buffered=True)
+
+    # # Export data from database to local csv
     # export_user_data(db_cursor, user_identifier)
-    # export_user_esm(db_cursor, user_identifier)
 
-    # process_light_data(user_identifier)
-    # process_activity_data(user_identifier)
-    # process_noise_data(user_identifier)
-    # process_screen_data(user_identifier)
-    # process_app_notifications_data(user_identifier)
-    # ambient_light(user_identifier)
-    estimate_sleep(user_identifier)
-
-    
-    
-
+    # # Delete emulator devices from aware_device table
     # delete_emulator_device(db_cursor, db_connection)
 
+    # # Remove entries corresponding to invalid devices from all tables
     # valid_devices = get_valid_device_id(db_cursor)
     # for table in ALL_TABLES:
     #     delete_invalid_device_entries(db_cursor, table, tuple(valid_devices))
     #     # delete_single_entry(db_cursor, "aware_device", "emu64xa")
     #     db_connection.commit()
+
+    # db_cursor.close()
+    # db_connection.close()
+    # -- End of block --
+
+    # -- NOTE: This block of functions execute the extraction and early processing of sensor data into dataframes
+    # process_light_data(user_identifier)
+    # process_activity_data(user_identifier)
+    # process_noise_data(user_identifier)
+    # process_screen_data(user_identifier)
+    # process_application_usage_data(user_identifier)
+    # process_bluetooth_data(user_identifier)
+    # process_location_data(user_identifier)
+    # process_wifi_data(user_identifier)
+    # -- End of block
+
+    # -- NOTE: This block of functions combine multiple sensor information to generate interpretation
+    # estimate_sleep(user_identifier)
+    location_with_semantic(user_identifier)
+    # -- End of block
+
+    # ambient_light(user_identifier)
+    # phone_productivity(user_identifier)
     
-    db_cursor.close()
-    db_connection.close()
+    
+
+    
+    
+
     
