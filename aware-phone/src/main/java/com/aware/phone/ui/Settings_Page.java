@@ -211,6 +211,14 @@ public class Settings_Page extends Aware_Activity {
                 boolean statusCalls = Aware.getSetting(getApplicationContext(), Aware_Preferences.STATUS_CALLS).equals("true");
                 boolean statusMessages = Aware.getSetting(getApplicationContext(), Aware_Preferences.STATUS_MESSAGES).equals("true");
                 Aware.setSetting(getApplicationContext(), Aware_Preferences.STATUS_COMMUNICATION_EVENTS, (statusCalls || statusMessages));
+            } else if (key.equals(Aware_Preferences.STATUS_SCREEN)) {
+                boolean screenStatus = Aware.getSetting(getApplicationContext(), Aware_Preferences.STATUS_SCREEN).equals("true");
+                Aware.setSetting(getApplicationContext(), "status_plugin_device_usage", screenStatus);
+                if (screenStatus) {
+                    Aware.startPlugin(getApplicationContext(), "com.aware.plugin.device_usage");
+                } else {
+                    Aware.stopPlugin(getApplicationContext(), "com.aware.plugin.device_usage");
+                }
             }
 
             //Start/Stop sensor
@@ -255,6 +263,11 @@ public class Settings_Page extends Aware_Activity {
         } catch (JSONException e) {
             e.printStackTrace();
         }
+
+        // HACK: Hide device_usage preference selection and set it to be enabled/disabled based on screen events
+        Preference deviceUsagePref = findPreference("plugin_device_usage");
+        PreferenceCategory rootPref = (PreferenceCategory) getPreferenceParent(deviceUsagePref);
+        rootPref.removePreference(deviceUsagePref);
     }
 
     /**
@@ -267,19 +280,21 @@ public class Settings_Page extends Aware_Activity {
             Boolean pluginIsActive = Aware.getSetting(getApplicationContext(), "status_" + pluginName).equalsIgnoreCase("true");
             // Update plugin icons based on status
             Preference pluginPref = findPreference(pluginName);
-            try {
-                Class res = R.drawable.class;
-                Field field = res.getField("ic_" + pluginName);
-                int icon_id = field.getInt(null);
-                Drawable category_icon = ContextCompat.getDrawable(getApplicationContext(), icon_id);
-                if (category_icon != null) {
-                    int colorId = pluginIsActive ? R.color.settingEnabled : R.color.settingDisabled;
-                    category_icon.setColorFilter(new PorterDuffColorFilter(ContextCompat.getColor(getApplicationContext(), colorId), PorterDuff.Mode.SRC_IN));
-                    pluginPref.setIcon(category_icon);
-                    onContentChanged();
+            if (pluginPref != null) {
+                try {
+                    Class res = R.drawable.class;
+                    Field field = res.getField("ic_" + pluginName);
+                    int icon_id = field.getInt(null);
+                    Drawable category_icon = ContextCompat.getDrawable(getApplicationContext(), icon_id);
+                    if (category_icon != null) {
+                        int colorId = pluginIsActive ? R.color.settingEnabled : R.color.settingDisabled;
+                        category_icon.setColorFilter(new PorterDuffColorFilter(ContextCompat.getColor(getApplicationContext(), colorId), PorterDuff.Mode.SRC_IN));
+                        pluginPref.setIcon(category_icon);
+                        onContentChanged();
+                    }
+                } catch (NoSuchFieldException | IllegalAccessException e) {
+                    e.printStackTrace();
                 }
-            } catch (NoSuchFieldException | IllegalAccessException e) {
-                e.printStackTrace();
             }
         }
     }
@@ -565,7 +580,9 @@ public class Settings_Page extends Aware_Activity {
 
                         if (sensorStatuses.contains(sensorSetting)) {
                             sensorStatuses.remove(sensorSetting);
-                            isActiveInConfig = sensorInfo.getBoolean("value");
+//                            isActiveInConfig = sensorInfo.getBoolean("value");
+                            // HACK: Updated to retain sensor preference even though they might be disabled by default
+                            isActiveInConfig = true;
                         }
 
                         if (isActiveInConfig || sensorStatuses.size() == 0) break;

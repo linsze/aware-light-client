@@ -101,6 +101,7 @@ public class PermissionUtils {
         put(Manifest.permission.READ_PHONE_STATE, new String[]{"Phone", "call detection"});
         put(Manifest.permission.READ_CALL_LOG, new String[]{"Call logs", "call logging"});
         put(Manifest.permission.READ_SMS, new String[]{"SMS", "SMS logging"});
+        put(Manifest.permission.ACCESS_WIFI_STATE, new String[]{"WiFi", "wifi status"});
     }};
 
     /**
@@ -111,6 +112,7 @@ public class PermissionUtils {
         put(classHeading + "Communication", new ArrayList<String>(){{add(Aware_Preferences.STATUS_CALLS); add(Aware_Preferences.STATUS_MESSAGES);}});
         put(classHeading + "Bluetooth", new ArrayList<String>(){{add(Aware_Preferences.STATUS_BLUETOOTH);}});
         put(classHeading + "Locations", new ArrayList<String>(){{add(Aware_Preferences.STATUS_LOCATION_GPS); add(Aware_Preferences.STATUS_LOCATION_NETWORK); add(Aware_Preferences.STATUS_LOCATION_PASSIVE);}});
+        put(classHeading + "WiFi", new ArrayList<String>(){{add(Aware_Preferences.STATUS_WIFI);}});
     }};
 
     /**

@@ -342,7 +342,6 @@ public class StudyUtils extends IntentService {
         boolean messageStatus =  Aware.getSetting(context, Aware_Preferences.STATUS_MESSAGES).equals("true");
         Aware.setSetting(context, Aware_Preferences.STATUS_COMMUNICATION_EVENTS, (callStatus || messageStatus));
 
-
         //Set the plugins' settings now
         ArrayList<String> active_plugins = new ArrayList<>();
         for (int i = 0; i < plugins.length(); i++) {
@@ -356,6 +355,12 @@ public class StudyUtils extends IntentService {
                 for (int j = 0; j < plugin_settings.length(); j++) {
                     JSONObject plugin_setting = plugin_settings.getJSONObject(j);
                     Aware.setSetting(context, plugin_setting.getString("setting"), plugin_setting.get("value"), package_name);
+                    
+                    //NOTE: Status of device_usage plugin is dependent on status of screen
+                    if ((package_name.contains("device_usage")) && (plugin_setting.getString("setting").contains("status_"))) {
+                        boolean screenStatus = Aware.getSetting(context, Aware_Preferences.STATUS_SCREEN).equals("true");;
+                        Aware.setSetting(context, plugin_setting.getString("setting"), screenStatus, package_name);
+                    }
                 }
             } catch (JSONException e) {
                 e.printStackTrace();

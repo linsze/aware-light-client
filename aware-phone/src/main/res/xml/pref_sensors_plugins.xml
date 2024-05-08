@@ -15,37 +15,6 @@ Refer to pref_aware_light.xml for all other components.
             android:title="Activity recognition">
         </PreferenceScreen>
         <PreferenceScreen
-            android:icon="@drawable/ic_action_accelerometer"
-            android:key="accelerometer"
-            android:summary="Raw acceleration, including the force of gravity"
-            android:title="Accelerometer">
-            <EditTextPreference
-                android:title="Additional permissions required"
-                android:summary="None" />
-            <CheckBoxPreference
-                android:defaultValue="false"
-                android:key="status_accelerometer"
-                android:persistent="true"
-                android:title="Enabled"
-                android:summary="Acceleration in the X, Y, and Z axes relative to the phone's orientation" />
-            <ListPreference
-                android:defaultValue="200000"
-                android:entries="@array/frequency_readable"
-                android:entryValues="@array/frequency_values"
-                android:key="frequency_accelerometer"
-                android:persistent="true"
-                android:dependency="status_accelerometer"
-                android:summary="Default: every 200 microseconds"
-                android:title="Sampling rate" />
-            <CheckBoxPreference
-                android:defaultValue="false"
-                android:key="status_significant_motion"
-                android:persistent="true"
-                android:dependency="status_accelerometer"
-                android:summary="Only log motion events. Saves battery life, stops motion sensors logs if idle!"
-                android:title="Significant motion only" />
-        </PreferenceScreen>
-        <PreferenceScreen
             android:icon="@drawable/ic_action_applications"
             android:key="applications"
             android:summary="Application usage and interactions"
@@ -89,7 +58,7 @@ Refer to pref_aware_light.xml for all other components.
                 android:key="status_light"
                 android:persistent="true"
                 android:title="Enabled"
-                android:summary="Magnitude of ambient luminance" />
+                android:summary="Ambient luminance" />
             <ListPreference
                 android:defaultValue="20000"
                 android:entries="@array/frequency_readable"
@@ -102,23 +71,23 @@ Refer to pref_aware_light.xml for all other components.
         <PreferenceScreen
             android:icon="@drawable/ic_plugin_ambient_noise"
             android:key="plugin_ambient_noise"
-            android:summary="Surrounding noisy or silent moments"
+            android:summary="Surrounding noise"
             android:title="Ambient noise">
         </PreferenceScreen>
         <PreferenceScreen
             android:icon="@drawable/ic_action_bluetooth"
             android:key="bluetooth"
-            android:summary="Nearby Bluetooth-enabled and visible devices"
+            android:summary="Nearby Bluetooth-enabled devices"
             android:title="Bluetooth">
             <EditTextPreference
                 android:title="Additional permissions required"
-                android:summary="Access to approximate location" />
+                android:summary="Approximate location" />
             <CheckBoxPreference
                 android:defaultValue="false"
                 android:key="status_bluetooth"
                 android:persistent="true"
                 android:title="Enabled"
-                android:summary="Name and MAC address of nearby devices" />
+                android:summary="Name of nearby Bluetooth devices" />
             <ListPreference
                 android:defaultValue="60"
                 android:key="frequency_bluetooth"
@@ -141,29 +110,29 @@ Refer to pref_aware_light.xml for all other components.
                 android:defaultValue="false"
                 android:key="status_calls"
                 android:persistent="true"
-                android:summary="Duration of calls performed, received, or missed, without call content"
+                android:summary="Incoming/outgoing/missed calls, without call content"
                 android:title="Call events" />
             <CheckBoxPreference
                 android:defaultValue="false"
                 android:key="status_messages"
                 android:persistent="true"
-                android:summary="Sent or received SMS/MMS, without message content"
+                android:summary="Sent/received SMS/MMS, without message content"
                 android:title="Message events" />
         </PreferenceScreen>
         <PreferenceScreen
             android:icon="@drawable/ic_action_locations"
             android:key="locations"
-            android:summary="Estimated based on GPS and/or network"
+            android:summary="GPS and/or network"
             android:title="Locations">
             <EditTextPreference
                 android:title="Additional permissions required"
-                android:summary="Access to approximate or precise location and cellular network" />
+                android:summary="Approximate/precise location, cellular network" />
             <CheckBoxPreference
                 android:defaultValue="false"
                 android:key="status_location_gps"
                 android:persistent="true"
-                android:summary="Estimate location latitude, longitude, altitude etc. based on GPS"
-                android:title="GPS estimates" />
+                android:summary="Estimates via GPS"
+                android:title="GPS" />
             <ListPreference
                 android:defaultValue="180"
                 android:key="frequency_location_gps"
@@ -177,8 +146,8 @@ Refer to pref_aware_light.xml for all other components.
                 android:defaultValue="false"
                 android:key="status_location_network"
                 android:persistent="true"
-                android:summary="Estimate location based on cellular and Wi-Fi networks"
-                android:title="Network estimates" />
+                android:summary="Estimates via cellular and Wi-Fi networks"
+                android:title="Network" />
             <ListPreference
                 android:defaultValue="300"
                 android:key="frequency_location_network"
@@ -243,22 +212,22 @@ Refer to pref_aware_light.xml for all other components.
         <PreferenceScreen
             android:icon="@drawable/ic_action_wifi"
             android:key="wifi"
-            android:summary="Surrounding Wi-Fi visible devices"
+            android:summary="Nearby Wi-Fi visible devices"
             android:title="Wi-Fi">
             <EditTextPreference
                 android:title="Additional permissions required"
-                android:summary="Access to Wi-Fi connectivity states" />
+                android:summary="Wi-Fi connectivity states, approximate location" />
             <CheckBoxPreference
                 android:defaultValue="false"
                 android:key="status_wifi"
                 android:persistent="true"
                 android:title="Enabled"
-                android:summary="Name, MAC address, and band frequency of nearby devices" />
+                android:summary="Name of nearby Wi-Fi devices" />
             <ListPreference
                 android:defaultValue="60"
                 android:key="frequency_wifi"
-                android:persistent="true"
                 android:dependency="status_wifi"
+                android:persistent="true"
                 android:entries="@array/sampling_frequency_readable"
                 android:entryValues="@array/sampling_frequency_values_second"
                 android:summary="Default: every 60 seconds"
