@@ -79,9 +79,6 @@ public class WiFi extends Aware_Sensor {
         put(Manifest.permission.ACCESS_COARSE_LOCATION, new HashMap<String, String>(){{
             put("WiFi sensing", Aware_Preferences.STATUS_WIFI);
         }});
-        put(Manifest.permission.ACCESS_WIFI_STATE, new HashMap<String, String>(){{
-            put("WiFi sensing", Aware_Preferences.STATUS_WIFI);
-        }});
     }};
 
     private static ArrayList<String> ADDITIONAL_PERMISSIONS = new ArrayList<String>(){{
