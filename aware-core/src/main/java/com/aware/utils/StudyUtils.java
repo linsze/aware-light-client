@@ -355,7 +355,7 @@ public class StudyUtils extends IntentService {
                 for (int j = 0; j < plugin_settings.length(); j++) {
                     JSONObject plugin_setting = plugin_settings.getJSONObject(j);
                     Aware.setSetting(context, plugin_setting.getString("setting"), plugin_setting.get("value"), package_name);
-                    
+
                     //NOTE: Status of device_usage plugin is dependent on status of screen
                     if ((package_name.contains("device_usage")) && (plugin_setting.getString("setting").contains("status_"))) {
                         boolean screenStatus = Aware.getSetting(context, Aware_Preferences.STATUS_SCREEN).equals("true");;
@@ -554,7 +554,7 @@ public class StudyUtils extends IntentService {
 
                 NotificationManager notManager = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
                 notManager.notify(Applications.ACCESSIBILITY_NOTIFICATION_ID, builder.build());
-
+                Aware.startAWARE(context, true);
                 if (!study.isClosed()) study.close();
             } catch (JSONException e) {
                 e.printStackTrace();
