@@ -1,12 +1,12 @@
 """
 Author: Lin Sze Khoo
 Created on: 24/01/2024
-Last modified on: 07/05/2024
+Last modified on: 12/05/2024
 """
 import json
 import math
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from itertools import product
 
 import findspark
@@ -19,7 +19,7 @@ from kneed import KneeLocator
 from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
 from pyspark.sql.types import (FloatType, IntegerType, LongType, StringType,
-                               StructField, StructType, TimestampType)
+                               StructField, StructType, TimestampType, BooleanType)
 from pyspark.sql.window import Window
 from scipy.interpolate import interp1d
 from sklearn.cluster import DBSCAN
@@ -64,8 +64,7 @@ def export_user_data(cursor, user_id):
         table_headers, user_entries = get_user_table(cursor, table, device_id)
         if len(user_entries) > 0:
             table_df = pd.DataFrame.from_records(user_entries, columns=table_headers)
-            table_df["datetime"] = [datetime.fromtimestamp(d/1000) for d in table_df["timestamp"]]
-            table_df["datetime"] = table_df["datetime"].dt.tz_localize("UTC").dt.tz_convert("Australia/Melbourne")
+            table_df["datetime"] = [datetime.fromtimestamp(d/1000, TIMEZONE) for d in table_df["timestamp"]]
             table_df["date"] = [d.date().strftime("%Y-%m-%d") for d in table_df["datetime"]]
             table_df["hour"] = [d.time().hour for d in table_df["datetime"]]
             table_df["minute"] = [d.time().minute for d in table_df["datetime"]]
@@ -191,7 +190,10 @@ def process_light_data(user_id):
             feature_ts = interp_func(time)
         
         light_df["average_lux_minute"] = feature_ts
-        light_df = spark.createDataFrame(light_df)
+        light_df = spark.createDataFrame(light_df.values.tolist(), schema=StructType([StructField("date", StringType()),\
+                                                                           StructField("hour", IntegerType()),\
+                                                                           StructField("minute", IntegerType()),\
+                                                                           StructField("average_lux_minute", FloatType())]))
         light_df.write.parquet(parquet_filename)
     
     light_df = spark.read.parquet(parquet_filename)
@@ -246,7 +248,11 @@ def process_noise_data(user_id):
         mean = np.mean(feature_ts)
         outlier_threshold = 2 * standard_dev
         noise_df["potential_outlier"] = noise_df["average_decibels_minute"] - mean > outlier_threshold
-        noise_df = spark.createDataFrame(noise_df)
+        noise_df = spark.createDataFrame(noise_df.values.tolist(), schema=StructType([StructField("date", StringType()),\
+                                                                                        StructField("hour", IntegerType()),\
+                                                                                        StructField("minute", IntegerType()),\
+                                                                                        StructField("average_decibels_minute", FloatType()),\
+                                                                                        StructField("potential_outlier", BooleanType())]))
         noise_df.write.parquet(parquet_filename)
 
     noise_df = spark.read.parquet(parquet_filename)
@@ -443,27 +449,36 @@ def optimize_cluster(loc_df):
     return best_epsilon, best_num_neighbors, best_silhouette_score
 
 
-def cluster_locations(loc_df):
+def cluster_locations(user_id, loc_df, latitude_col, longitude_col):
     """
     Performs DBSCAN clustering on unique combination of latitude and longitude using optimized epsilon values.
     Reference: https://machinelearningknowledge.ai/tutorial-for-dbscan-clustering-in-python-sklearn/
-    """
-    loc_df = loc_df.select("double_latitude", "double_longitude").distinct()
-    latitude = np.array(loc_df.select("double_latitude").collect()).flatten()
-    longitude = np.array(loc_df.select("double_longitude").collect()).flatten()
-    loc_df = np.transpose(np.vstack([latitude, longitude]))
-    epsilon, min_points, silhouette_score = optimize_cluster(loc_df)
-    if epsilon == 0:
-        return [-1 for i in range(len(loc_df))], min_points, silhouette_score
-    dbscan_cluster = DBSCAN(eps=epsilon, min_samples=min_points)
-    dbscan_cluster.fit(loc_df)
 
-    cluster_df_data = []
-    for index, (lat, long) in enumerate(loc_df):
-        cluster_df_data.append((float(lat), float(long), int(dbscan_cluster.labels_[index])))
-    cluster_df = spark.createDataFrame(cluster_df_data, schema=StructType([StructField("latitude", FloatType()),\
-                                                                           StructField("longitude", FloatType()),\
-                                                                           StructField("cluster_id", IntegerType())]))
+    NOTE: Pre-saved location clusters are based on location coordinates rounded to 5 decimal places.
+    """
+    parquet_filename = f"{DATA_FOLDER}/{user_id}_location_clusters.parquet"
+    if not os.path.exists(parquet_filename):
+        loc_df = loc_df.withColumn(latitude_col, F.round(F.col(latitude_col), 5))\
+            .withColumn(longitude_col, F.round(F.col(longitude_col), 5))
+        loc_df = loc_df.select(latitude_col, longitude_col).distinct()
+        latitude = np.array(loc_df.select(latitude_col).collect()).flatten()
+        longitude = np.array(loc_df.select(longitude_col).collect()).flatten()
+        loc_df = np.transpose(np.vstack([latitude, longitude]))
+        epsilon, min_points, silhouette_score = optimize_cluster(loc_df)
+        if epsilon == 0:
+            return [-1 for i in range(len(loc_df))], min_points, silhouette_score
+        dbscan_cluster = DBSCAN(eps=epsilon, min_samples=min_points)
+        dbscan_cluster.fit(loc_df)
+
+        cluster_df_data = []
+        for index, (lat, long) in enumerate(loc_df):
+            cluster_df_data.append((float(lat), float(long), int(dbscan_cluster.labels_[index])))
+        cluster_df = spark.createDataFrame(cluster_df_data, schema=StructType([StructField(latitude_col, FloatType()),\
+                                                                            StructField(longitude_col, FloatType()),\
+                                                                            StructField("cluster_id", IntegerType())]))
+        cluster_df.write.parquet(parquet_filename)
+    
+    cluster_df = spark.read.parquet(parquet_filename)
     return cluster_df
 
 
@@ -488,14 +503,6 @@ def process_location_data(user_id):
         location_df.write.parquet(parquet_filename)
     
     location_df = spark.read.parquet(parquet_filename)
-
-    # # Perform DBSCAN clustering
-    # cluster_df = cluster_locations(location_df)
-
-    # # Number of clusters excluding noise with -1 labels
-    # n_clust = cluster_df.select(F.col("cluster_id")).filter(F.col("cluster_id") != -1).distinct().count()
-    # print(f"Estimated number of clusters: {n_clust}")
-
     return location_df
 
 
@@ -519,84 +526,161 @@ def process_wifi_data(user_id):
     return wifi_df
 
 
+def complement_location_data(user_id):
+    """
+    Combines location and WiFi data to fill in empty coordinates and nearby WiFi devices.
+    Concatenate nearby WiFi devices detected at the same time point to provide location semantics.
+    Fill in empty coordinates based on same group of nearby WiFi devices.
+
+    NOTE:
+    1. Location coordinates are rounded to 5 decimal places (up to 1 metres) - can also be rounded to 4 dp for 10 metres allowance
+    2. The final output may have more rows than it originally was both location and WiFi combined
+    as the same list of WiFi devices may available at various coordinates.
+    """
+    parquet_filename = f"{DATA_FOLDER}/{user_id}_combined_location.parquet"
+    if not os.path.exists(parquet_filename):
+        time_cols = ["date", "hour", "minute"]
+        coordinate_cols = ["double_latitude", "double_longitude"]
+        # Concatenate list of nearby WiFi devices for each time point
+        wifi_df = process_wifi_data(user_id)\
+            .groupBy(*time_cols)\
+            .agg(F.concat_ws(", ", F.collect_set("ssid")).alias("WiFi_devices"))\
+            .sort(*time_cols)
+        location_df = process_location_data(user_id)\
+            .withColumn("double_latitude", F.round(F.col("double_latitude"), 5))\
+            .withColumn("double_longitude", F.round(F.col("double_longitude"), 5))
+        # Round location to a precision of 5 decimal places
+        all_locations = location_df.select(*time_cols + coordinate_cols)\
+                .join(wifi_df, time_cols, "outer").dropDuplicates().sort(time_cols)
+
+        # Unique combinations of available coordinates and list of nearby WiFi devices
+        unique_semantic_csv = f"{DATA_FOLDER}/{user_id}_unique_coordinate_WiFi.csv"
+        if not os.path.exists(unique_semantic_csv):
+            unique_coordinates_ssid = all_locations.select(*coordinate_cols + ["WiFi_devices"]).distinct().na.drop().sort(*coordinate_cols)
+            unique_coordinates_ssid.write.csv(unique_semantic_csv, header=True)
+        unique_coordinates_ssid = spark.read.option("header", True).csv(unique_semantic_csv)
+    
+        # Fill in null coordinates and list of nearby WiFi devices based on available data
+        filled_locations = all_locations.join(unique_coordinates_ssid.withColumnRenamed("WiFi_devices", "available_WiFi_devices"), coordinate_cols, "left")\
+            .withColumn("WiFi_devices", F.coalesce("WiFi_devices", "available_WiFi_devices"))\
+            .drop("available_WiFi_devices").dropDuplicates().sort(*time_cols)
+        filled_locations = filled_locations.join(unique_coordinates_ssid.withColumnRenamed("double_latitude", "available_latitude")\
+                                            .withColumnRenamed("double_longitude", "available_longitude"), "WiFi_devices", "left")\
+            .withColumn("double_latitude", F.coalesce("double_latitude", "available_latitude"))\
+            .withColumn("double_longitude", F.coalesce("double_longitude", "available_longitude"))\
+            .drop("available_latitude", "available_longitude").dropDuplicates().sort(*time_cols)
+        filled_locations.write.parquet(parquet_filename)
+
+    filled_locations = spark.read.parquet(parquet_filename)
+    return filled_locations
+
+
 def estimate_sleep(user_id):
     """
     Estimate sleep duration based on information from light, noise, activity and phone screen.
 
     NOTE Assumptions:
-    1. Does not limit to 1 estimated entry per day
-    2. Remove those with duration shorter than 1 hour
+    1. When conditions are fulfilled for consecutive entries within 5 minutes
+    2. Environment may not be completely quiet and/or dark
+    3. Does not limit to 1 estimated entry per day
+    4. Remove those with duration shorter than 1 hour
     """
-    light_df = process_light_data(user_id)
-    noise_df = process_noise_data(user_id)
-    activity_df = process_activity_data(user_id)
-    screen_df = spark.read.option("header", True).csv(f"{DATA_FOLDER}/{user_id}_plugin_device_usage.csv")
+    parquet_filename = f"{DATA_FOLDER}/{user_id}_sleep.parquet"
+    if not os.path.exists(parquet_filename):
+        time_cols = ["date", "hour", "minute"]
+        time_window = Window.partitionBy("date")\
+            .orderBy(*time_cols)
+        consecutive_min = 5
+        consecutive_window = Window.partitionBy("date")\
+            .orderBy(*time_cols)\
+            .rowsBetween(0, 4)
+        
+        dark_threshold = 10 
+        light_df = process_light_data(user_id)\
+            .withColumn("is_dark", F.when(F.col("average_lux_minute") <= dark_threshold, 1).otherwise(0))\
+            .withColumn("consecutive_dark_count", F.sum("is_dark").over(consecutive_window))
+        dark_df = light_df.filter(F.col("consecutive_dark_count") >= consecutive_min)\
+            .withColumn("dark_datetime", udf_generate_datetime(F.col("date"), F.col("hour"), F.col("minute")))\
+            .select("dark_datetime", "average_lux_minute")
+        bright_transition_df = light_df.withColumn("prev_is_dark", F.lag(F.col("is_dark")).over(time_window))\
+            .filter((F.col("prev_is_dark") == 1) & (F.col("is_dark") == 0))\
+            .withColumn("bright_transition_datetime", udf_generate_datetime(F.col("date"), F.col("hour"), F.col("minute")))
+        
+        noise_df = process_noise_data(user_id)
+        audio_quartiles = noise_df.approxQuantile("average_decibels_minute", [0.25, 0.50], 0.01)
+        # silence_threshold = round((audio_quartiles[1]-audio_quartiles[0]) / 2)
+        silence_threshold = round(audio_quartiles[1])
+        noise_df = noise_df\
+            .withColumn("is_quiet", F.when(F.col("average_decibels_minute") <= silence_threshold, 1).otherwise(0))\
+            .withColumn("consecutive_quiet_count", F.sum("is_quiet").over(consecutive_window))
+        quiet_df = noise_df.filter(F.col("consecutive_quiet_count") >= consecutive_min)\
+            .withColumn("quiet_datetime", udf_generate_datetime(F.col("date"), F.col("hour"), F.col("minute")))\
+            .select("quiet_datetime", "average_decibels_minute")
+        noise_transition_df = noise_df.withColumn("prev_is_quiet", F.lag(F.col("is_quiet")).over(time_window))\
+            .filter((F.col("prev_is_quiet") == 1) & (F.col("is_quiet") == 0))\
+            .withColumn("noise_transition_datetime", udf_generate_datetime(F.col("date"), F.col("hour"), F.col("minute")))
 
-    # NOTE: Environment may not be completely quiet and/or dark
-    dark_threshold = 10 
-    audio_quartiles = noise_df.approxQuantile("average_decibels_minute", [0.25, 0.50], 0.01)
-    silence_threshold = round((audio_quartiles[1]-audio_quartiles[0]) / 2)
-    dark_env = light_df.filter(F.col("average_lux_minute") <= dark_threshold)
-    quiet_env = noise_df.filter(F.col("average_decibels_minute") <= round(audio_quartiles[1]))
-    stationary = activity_df.filter(F.col("activity_type") == 3)
+        activity_df = process_activity_data(user_id)\
+            .withColumn("is_still", F.when(F.col("activity_type") == 3, 1).otherwise(0))\
+            .withColumn("consecutive_still_count", F.sum("is_still").over(consecutive_window))
+        stationary_df = activity_df.filter(F.col("consecutive_still_count") >= consecutive_min)\
+            .withColumn("stationary_datetime", udf_generate_datetime(F.col("date"), F.col("hour"), F.col("minute")))\
+            .select("stationary_datetime", "activities")
+        movement_transition_df = activity_df.withColumn("prev_is_still", F.lag(F.col("is_still")).over(time_window))\
+            .filter((F.col("prev_is_still") == 1) & (F.col("is_still") == 0))\
+            .withColumn("movement_transition_datetime", udf_generate_datetime(F.col("date"), F.col("hour"), F.col("minute")))
 
-    off_screen = screen_df.filter(F.col("double_elapsed_device_off") > 0)\
-        .withColumn("timestamp", F.col("timestamp").cast(FloatType()))\
-        .withColumn("start_timestamp", F.col("timestamp") - F.col("double_elapsed_device_off"))\
-        .withColumn("start_datetime", udf_datetime_from_timestamp(F.col("start_timestamp")))\
-        .withColumn("end_datetime", udf_datetime_from_timestamp(F.col("timestamp")))
+        screen_df = spark.read.option("header", True).csv(f"{DATA_FOLDER}/{user_id}_plugin_device_usage.csv")
+        off_screen = screen_df.filter(F.col("double_elapsed_device_off") > consecutive_min*60000)\
+            .withColumn("timestamp", F.col("timestamp").cast(FloatType()))\
+            .withColumn("start_timestamp", F.col("timestamp") - F.col("double_elapsed_device_off"))\
+            .withColumn("start_datetime", udf_datetime_from_timestamp(F.col("start_timestamp")))\
+            .withColumn("end_datetime", udf_datetime_from_timestamp(F.col("timestamp")))\
+            .sort("start_datetime")
 
-    dark_env = dark_env.withColumn("dark_datetime", udf_generate_datetime(F.col("date"), F.col("hour"), F.col("minute")))
-    quiet_env = quiet_env.withColumn("quiet_datetime", udf_generate_datetime(F.col("date"), F.col("hour"), F.col("minute")))
-    stationary = stationary.withColumn("stationary_datetime", udf_generate_datetime(F.col("date"), F.col("hour"), F.col("minute")))
+        # V1
+        # time_diff_allowance = 5*60
+        # sleep_df = dark_env.join(quiet_env, F.abs(F.unix_timestamp(dark_env["dark_datetime"]) - F.unix_timestamp(quiet_env["quiet_datetime"])) <= time_diff_allowance)
+        # sleep_df = sleep_df.join(stationary, ((F.abs(F.unix_timestamp(sleep_df["dark_datetime"]) - F.unix_timestamp(stationary["stationary_datetime"])) <= time_diff_allowance) |\
+        #                        (F.abs(F.unix_timestamp(sleep_df["quiet_datetime"]) - F.unix_timestamp(stationary["stationary_datetime"])) <= time_diff_allowance)))
+        # sleep_df = sleep_df.join(off_screen, (((F.col("dark_datetime") >= F.col("start_datetime")) & (F.col("dark_datetime") <= F.col("end_datetime"))) |\
+        #                                       ((F.col("quiet_datetime") >= F.col("start_datetime")) & (F.col("quiet_datetime") <= F.col("end_datetime"))) | \
+        #                                         ((F.col("stationary_datetime") >= F.col("start_datetime")) & (F.col("stationary_datetime") <= F.col("end_datetime")))))
 
-    # V1
-    # time_diff_allowance = 10*60
-    # sleep_df = dark_env.join(quiet_env, F.abs(F.unix_timestamp(dark_env["dark_datetime"]) - F.unix_timestamp(quiet_env["quiet_datetime"])) <= time_diff_allowance)
-    # sleep_df = sleep_df.join(stationary, ((F.abs(F.unix_timestamp(sleep_df["dark_datetime"]) - F.unix_timestamp(stationary["stationary_datetime"])) <= time_diff_allowance) |\
-    #                        (F.abs(F.unix_timestamp(sleep_df["quiet_datetime"]) - F.unix_timestamp(stationary["stationary_datetime"])) <= time_diff_allowance)))
-    # sleep_df = sleep_df.join(off_screen, (((F.col("dark_datetime") >= F.col("start_datetime")) & (F.col("dark_datetime") <= F.col("end_datetime"))) |\
-    #                                       ((F.col("quiet_datetime") >= F.col("start_datetime")) & (F.col("quiet_datetime") <= F.col("end_datetime"))) | \
-    #                                         ((F.col("stationary_datetime") >= F.col("start_datetime")) & (F.col("stationary_datetime") <= F.col("end_datetime")))))
-
-    # V2
-    sleep_df = off_screen.join(dark_env, (F.col("dark_datetime") >= F.col("start_datetime")) & (F.col("dark_datetime") <= F.col("end_datetime")))\
-        .join(quiet_env, (F.col("quiet_datetime") >= F.col("start_datetime")) & (F.col("quiet_datetime") <= F.col("end_datetime")))\
-        .join(stationary, (F.col("stationary_datetime") >= F.col("start_datetime")) & (F.col("stationary_datetime") <= F.col("end_datetime")))\
-        .dropDuplicates()
-
-    sleep_df = sleep_df.select(*["start_datetime", "end_datetime", "average_lux_minute", "average_decibels_minute"])\
-        .dropDuplicates()
-    sleep_df = sleep_df.groupBy("start_datetime", "end_datetime").agg(F.mean(F.col("average_decibels_minute")).alias("average_ambient_decibels"), \
-                                                                      F.mean(F.col("average_lux_minute")).alias("average_ambient_luminance"))
-    sleep_df = sleep_df.withColumn("duration (s)", F.unix_timestamp(F.col("end_datetime")) - F.unix_timestamp(F.col("start_datetime")))\
-        .filter(F.col("duration (s)") >= 3600)\
-        .withColumn("duration (hr)", F.col("duration (s)") / 3600)\
-        .withColumn("onset_time", udf_string_datetime(F.col("start_datetime")))\
-        .withColumn("end_time", udf_string_datetime(F.col("end_datetime")))\
-        .sort("start_datetime")
-    sleep_df.show()
-    return sleep_df
-
-def location_with_semantic(user_id):
-    """
-    Combines information from location and wifi data.
-    """
-    location_df = process_location_data(user_id)
-    wifi_df = process_wifi_data(user_id)
-    time_cols = ["date", "hour", "minute"]
-    location_semantic = location_df.select(*time_cols + ["double_latitude", "double_longitude"])\
-        .join(wifi_df, time_cols, "outer").dropDuplicates().sort(time_cols)
+        # V2
+        sleep_onset_df = dark_df.join(quiet_df, F.col("dark_datetime") == F.col("quiet_datetime"))\
+            .join(stationary_df, F.col("stationary_datetime") == F.col("dark_datetime"))\
+            .join(off_screen, (F.col("dark_datetime") >= F.col("start_datetime")) & (F.col("dark_datetime") <= F.col("end_datetime")))\
+            .withColumn("onset_datetime", F.greatest(F.col("dark_datetime"), F.col("start_datetime")))\
+            .select(*["onset_datetime", "end_datetime", "average_lux_minute", "average_decibels_minute", "activities"])\
+            .dropDuplicates().sort("onset_datetime")
+        
+        sleep_wake_df = off_screen.join(bright_transition_df, (F.col("bright_transition_datetime") >= F.col("start_datetime")))\
+            .join(noise_transition_df, (F.col("noise_transition_datetime") >= F.col("start_datetime")))\
+            .join(movement_transition_df, (F.col("movement_transition_datetime") >= F.col("start_datetime")))\
+            .withColumn("wake_datetime", F.least(F.col("bright_transition_datetime"), F.col("noise_transition_datetime"), F.col("movement_transition_datetime"), F.col("end_datetime")))\
+            .select(*["start_datetime", "wake_datetime"])\
+            .groupBy("start_datetime").agg(F.min("wake_datetime").alias("wake_datetime"))\
+            .dropDuplicates().sort("start_datetime")
+        
+        sleep_df = sleep_onset_df.join(sleep_wake_df, (F.col("onset_datetime") >= F.col("start_datetime")) & (F.col("wake_datetime") <= F.col("end_datetime")))\
+            .withColumn("start_datetime", F.least(F.col("onset_datetime"), F.col("start_datetime")))\
+            .withColumn("end_datetime", F.least(F.col("wake_datetime"), F.col("end_datetime")))\
+            .drop("onset_datetime", "wake_datetime")\
+            .groupBy("start_datetime", "end_datetime").agg(F.min(F.col("average_lux_minute")).alias("minimum_lux_minute"),\
+                                                           F.min(F.col("average_decibels_minute")).alias("minimum_decibels_minute"))\
+            .dropDuplicates().sort("start_datetime")\
+            .withColumn("duration (s)", F.unix_timestamp(F.col("end_datetime")) - F.unix_timestamp(F.col("start_datetime")))\
+            .filter(F.col("duration (s)") >= 3600)\
+            .withColumn("duration (hr)", F.col("duration (s)") / 3600)\
+            .withColumn("onset_time", udf_string_datetime(F.col("start_datetime")))\
+            .withColumn("end_time", udf_string_datetime(F.col("end_datetime")))\
+            .sort("start_datetime")
+        sleep_df.show()
+        # sleep_df.write.parquet(parquet_filename)
     
-    # Fill in coordinates based on known coordinates and ssid mapping
-    known_mapping = location_semantic.na.drop()
-    average_location_coordinates = known_mapping.groupBy("ssid")\
-        .agg(F.mean("double_latitude").alias("average_latitude"), \
-             F.mean("double_longitude").alias("average_longitude"))
-
-    location_semantic = location_semantic.join(average_location_coordinates, "ssid")\
-        .drop("double_latitude", "double_longitude")\
-        .dropDuplicates().sort(time_cols)
+    # sleep_df = spark.read.parquet(parquet_filename)
+    return sleep_df
 
 
 def phone_productivity(user_id):
@@ -674,7 +758,81 @@ def ambient_light(user_id):
     # plt.show()
     # grouped_light = light_df.groupby(["date", "time"]).mean()
     # rolling_light = light_df.rolling()
+
+def daily_routine(user_id):
+    """
+    Combines all information related to an individual's daytime productivity.
+    1. Deduce home based on location during estimated sleep duration
+    2. 
+
+    TODO: Map daily routine to mood, productivity or sleep rating
+
+    Group information into hourly or epoch of the day
+    1. Range of activity involved during the day
+    2. Light environment
     
+    Other information:
+    1. Map light with noise information - sleep, work vs outdoor environment
+    2. People/device around - Bluetooth
+    """
+    # Pre-saved unique location clusters and available semantics
+    # location_cluster = cluster_locations(user_id, location_df, "double_latitude", "double_longitude")
+    # # Number of clusters excluding noise with -1 labels
+    # n_clust = cluster_df.select(F.col("cluster_id")).filter(F.col("cluster_id") != -1).distinct().count()
+    # print(f"Estimated number of clusters: {n_clust}")
+
+    # TODO: Deduce home cluster based on estimated sleep duration
+    # 1 - Start of the day: wake time
+    sleep_df = estimate_sleep(user_id)
+    
+    # 2 - Wake location/cluster as home
+    # Get locations with clusters
+    coordinate_cols = ["double_latitude", "double_longitude"]
+    all_locations = complement_location_data(user_id)\
+        .withColumn("location_datetime", udf_generate_datetime(F.col("date"), F.col("hour").cast(IntegerType()), F.col("minute").cast(IntegerType())))
+    location_df = process_location_data(user_id)
+    cluster_df = cluster_locations(user_id, location_df, "double_latitude", "double_longitude")
+    all_locations = all_locations.join(cluster_df, coordinate_cols, "left").dropDuplicates()
+
+    sleep_wake_locations = sleep_df.join(all_locations, (F.col("start_datetime") <= F.col("location_datetime")) & (F.col("end_datetime") >= F.col("location_datetime")))\
+        .select(*sleep_df.columns + coordinate_cols + ["WiFi_devices", "cluster_id"]).distinct()\
+        .sort("start_datetime")
+    sleep_cluster_count = sleep_wake_locations.groupBy("start_datetime", "cluster_id")\
+        .agg(F.count("double_longitude").alias("cluster_count"))
+    max_cluster_count = sleep_cluster_count.groupBy("start_datetime").agg(F.max("cluster_count").alias("cluster_count"))\
+        .join(sleep_cluster_count, ["start_datetime", "cluster_count"])
+    sleep_cluster = sleep_wake_locations.join(max_cluster_count.select("start_datetime", "cluster_id"), ["start_datetime", "cluster_id"])\
+        .dropDuplicates()
+    sleep_cluster_locations = sleep_cluster.groupBy("start_datetime", "cluster_id")\
+        .agg(F.concat_ws(", ", F.collect_set("WiFi_devices")).alias("WiFi_devices"))\
+        .withColumn("cluster_WiFi_devices", udf_unique_wifi_list(F.col("WiFi_devices")))
+    # sleep_cluster_locations.show()
+
+    # 3 - Hourly activities after wake time
+    # Context of physical movement - within and across cluster
+    time_cols = ["date", "hour", "minute"]
+    physical_mobility = process_activity_data(user_id)\
+        .withColumn("date_time", udf_generate_datetime(F.col("date"), F.col("hour"), F.col("minute")))
+    # Physical mobility after wake time
+
+    # mobility_location = physical_mobility.join(all_locations, time_cols)\
+    #     .select(*time_cols + ["activity_name", "activity_type", "double_latitude", "double_longitude", "cluster_id"])\
+    #     .dropDuplicates().sort(*time_cols)\
+    #     .withColumn("date_time", udf_generate_datetime(F.col("date"), F.col("hour"), F.col("minute")))
+    # mobility_location
+    
+        # .groupBy("date", "hour", "activity_name").agg(F.sum("activity_duration").alias("activity_duration"))\
+        # .filter(F.col("activity_duration") > 0)
+    # physical_mobility.sort("date", "hour", "activity_name").show()
+
+    # app_usage = process_application_usage_data(user_id)
+
+
+    # Hourly distribution of physical activity
+    
+
+    # Hourly productivity
+
 
 if __name__ == "__main__":
     # Spark installation: https://phoenixnap.com/kb/install-spark-on-windows-10
@@ -691,6 +849,7 @@ if __name__ == "__main__":
         .config("spark.memory.offHeap.size", "50g")\
         .config("spark.memory.offHeap.enabled", "true")\
         .config("spark.driver.maxResultSize", "10G")\
+        .config("spark.sql.session.timeZone", "Australia/Melbourne")\
         .getOrCreate()
     sc = spark.sparkContext
 
@@ -700,11 +859,17 @@ if __name__ == "__main__":
                     "screen", "screentext", "sensor_accelerometer", "sensor_bluetooth", "sensor_light",\
                     "sensor_wifi", "telephony", "wifi", "esms"]
     DATA_FOLDER = "user_data"
-    
-    udf_datetime_from_timestamp = F.udf(lambda x: datetime.fromtimestamp(x/1000), TimestampType())
-    udf_generate_datetime = F.udf(lambda d, h, m: datetime.strptime(f"{d} {h:02d}:{m:02d}", "%Y-%m-%d %H:%M"), TimestampType())
-    udf_get_date_from_datetime = F.udf(lambda x: x.date().strftime("%Y-%m-%d"), StringType())
-    udf_string_datetime = F.udf(lambda x: x.strftime("%Y-%m-%d %H:%M"), StringType())
+    TIMEZONE = pytz.timezone("Australia/Melbourne")
+
+    # .astimezone(TIMEZONE)
+    # .replace(tzinfo=TIMEZONE)
+    udf_datetime_from_timestamp = F.udf(lambda x: datetime.fromtimestamp(x/1000, TIMEZONE), TimestampType())
+    udf_generate_datetime = F.udf(lambda d, h, m: TIMEZONE.localize(datetime.strptime(f"{d} {h:02d}:{m:02d}", "%Y-%m-%d %H:%M")), TimestampType())
+    udf_get_date_from_datetime = F.udf(lambda x: x.astimezone(TIMEZONE).date().strftime("%Y-%m-%d"), StringType())
+    udf_get_hour_from_datetime = F.udf(lambda x: x.astimezone(TIMEZONE).time().hour, IntegerType())
+    udf_get_minute_from_datetime = F.udf(lambda x: x.astimezone(TIMEZONE).time().minute, IntegerType())
+    udf_string_datetime = F.udf(lambda x: x.astimezone(TIMEZONE).strftime("%Y-%m-%d %H:%M"), StringType())
+    udf_unique_wifi_list = F.udf(lambda x: ", ".join(sorted(list(set(x.split(", "))))), StringType())
 
     user_identifier = "pixel3"
 
@@ -715,7 +880,7 @@ if __name__ == "__main__":
     # db_connection = mysql.connector.connect(**db_config)
     # db_cursor = db_connection.cursor(buffered=True)
 
-    # # Export data from database to local csv
+    # Export data from database to local csv
     # export_user_data(db_cursor, user_identifier)
 
     # # Delete emulator devices from aware_device table
@@ -744,8 +909,11 @@ if __name__ == "__main__":
     # -- End of block
 
     # -- NOTE: This block of functions combine multiple sensor information to generate interpretation
+    # location_df = process_location_data(user_identifier)
+    # cluster_df = cluster_locations(user_identifier, location_df, "double_latitude", "double_longitude")
     # estimate_sleep(user_identifier)
-    location_with_semantic(user_identifier)
+    # complement_location_data(user_identifier)
+    daily_routine(user_identifier)
     # -- End of block
 
     # ambient_light(user_identifier)
