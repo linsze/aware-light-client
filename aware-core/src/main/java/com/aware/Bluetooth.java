@@ -24,11 +24,14 @@ import android.os.Handler;
 import android.os.IBinder;
 import android.util.Log;
 import androidx.core.app.NotificationCompat;
+import androidx.localbroadcastmanager.content.LocalBroadcastManager;
+
 import com.aware.providers.Bluetooth_Provider;
 import com.aware.providers.Bluetooth_Provider.Bluetooth_Data;
 import com.aware.providers.Bluetooth_Provider.Bluetooth_Sensor;
 import com.aware.utils.Aware_Sensor;
 import com.aware.utils.Encrypter;
+import com.aware.utils.PermissionUtils;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -203,8 +206,8 @@ public class Bluetooth extends Aware_Sensor {
             if (bluetoothAdapter == null) {
                 if (Aware.DEBUG) Log.w(TAG, "No bluetooth is detected on this device");
                 stopSelf();
+                return START_NOT_STICKY;
             } else {
-
                 if (!bluetoothAdapter.isEnabled()) {
                     notifyMissingBluetooth(getApplicationContext(), false);
                 }
@@ -336,10 +339,14 @@ public class Bluetooth extends Aware_Sensor {
         unregisterReceiver(bluetoothMonitor);
 
         if (bluetoothAdapter != null) {
-
             bluetoothAdapter.cancelDiscovery();
             if (BLE_SUPPORT) {
-                bluetoothAdapter.getBluetoothLeScanner().stopScan(scanCallback);
+                BluetoothLeScanner bluetoothLeScanner = bluetoothAdapter.getBluetoothLeScanner();
+                if (bluetoothLeScanner != null) {
+                    bluetoothLeScanner.stopScan(scanCallback);
+                } else {
+                    if (Aware.DEBUG) Log.w(TAG, "Failed to get BluetoothLeScanner");
+                }
             }
 
             if (mBLEHandler != null) {
@@ -350,14 +357,21 @@ public class Bluetooth extends Aware_Sensor {
             alarmManager.cancel(bluetoothScan);
             notificationManager.cancel(123);
 
-
             ContentResolver.setSyncAutomatically(Aware.getAWAREAccount(this), Bluetooth_Provider.getAuthority(this), false);
             ContentResolver.removePeriodicSync(
                     Aware.getAWAREAccount(this),
                     Bluetooth_Provider.getAuthority(this),
                     Bundle.EMPTY
             );
-
+        } else {
+            //HACK: Manually disable because BluetoothAdapter was not present
+            Aware.setSetting(getApplicationContext(), Aware_Preferences.STATUS_BLUETOOTH, false);
+            Intent sensorIntent = new Intent();
+            sensorIntent.setAction(PermissionUtils.SENSOR_PREFERENCE_UPDATED);
+            sensorIntent.putExtra(PermissionUtils.MULTIPLE_PREFERENCES_UPDATED, false);
+            sensorIntent.putExtra(PermissionUtils.SENSOR_PREFERENCE, Aware_Preferences.STATUS_BLUETOOTH);
+            sensorIntent.putExtra(PermissionUtils.PREFERENCE_UPDATE_DISPLAY, "Bluetooth was not found in this device and has been disabled.");
+            sendBroadcast(sensorIntent);
         }
 
         if (Aware.DEBUG) Log.d(TAG, "Bluetooth service terminated...");

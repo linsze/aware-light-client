@@ -2,6 +2,7 @@ package com.aware.phone.ui;
 
 import static com.aware.Aware.TAG;
 import static com.aware.utils.PermissionUtils.MULTIPLE_PREFERENCES_UPDATED;
+import static com.aware.utils.PermissionUtils.PREFERENCE_UPDATE_DISPLAY;
 import static com.aware.utils.PermissionUtils.SENSOR_PREFERENCE_MAPPINGS;
 import static com.aware.utils.PermissionUtils.SERVICES_WITH_DENIED_PERMISSIONS;
 import static com.aware.utils.PermissionUtils.SERVICE_FULL_PERMISSIONS_NOT_GRANTED;
@@ -124,6 +125,7 @@ public class Settings_Page extends Aware_Activity {
         public void onReceive(Context context, Intent intent) {
             String prefKey = intent.getStringExtra(SENSOR_PREFERENCE);
             Boolean multiplePref = intent.getBooleanExtra(MULTIPLE_PREFERENCES_UPDATED, false);
+            String prefUpdateDisplay = intent.getStringExtra(PREFERENCE_UPDATE_DISPLAY);
             if (multiplePref) {
                 syncAllPreferences();
             } else {
@@ -131,6 +133,9 @@ public class Settings_Page extends Aware_Activity {
                 if (sensorPref != null) {
                     new SettingsSync().execute(sensorPref);
                 }
+            }
+            if (prefUpdateDisplay != null) {
+                Toast.makeText(context, prefUpdateDisplay, Toast.LENGTH_LONG).show();
             }
         }
     }

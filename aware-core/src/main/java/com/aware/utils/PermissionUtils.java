@@ -88,6 +88,12 @@ public class PermissionUtils {
     public static final String SENSOR_PREFERENCE = "sensor_preference";
 
     public static final String MULTIPLE_PREFERENCES_UPDATED = "multiple_preference_updated";
+    /**
+     * Non-empty string to be displayed as a toast when sensor preference is updated automatically.
+     * E.g., when a Bluetooth adaptor is not found or when light sensor is not available that
+     * sensing could not be activated.
+     */
+    public static final String PREFERENCE_UPDATE_DISPLAY = "sensor_preference_display";
 
     /**
      * Used to display rationale for required permissions.

@@ -26,6 +26,7 @@ import com.aware.providers.Light_Provider;
 import com.aware.providers.Light_Provider.Light_Data;
 import com.aware.providers.Light_Provider.Light_Sensor;
 import com.aware.utils.Aware_Sensor;
+import com.aware.utils.PermissionUtils;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -228,20 +229,32 @@ public class Light extends Aware_Sensor implements SensorEventListener {
     public void onDestroy() {
         super.onDestroy();
 
-        sensorHandler.removeCallbacksAndMessages(null);
-        mSensorManager.unregisterListener(this, mLight);
-        sensorThread.quit();
+        if (mLight != null) {
+            sensorHandler.removeCallbacksAndMessages(null);
+            mSensorManager.unregisterListener(this, mLight);
+            sensorThread.quit();
 
-        wakeLock.release();
+            wakeLock.release();
 
-        unregisterReceiver(dataLabeler);
+            unregisterReceiver(dataLabeler);
 
-        ContentResolver.setSyncAutomatically(Aware.getAWAREAccount(this), Light_Provider.getAuthority(this), false);
-        ContentResolver.removePeriodicSync(
-                Aware.getAWAREAccount(this),
-                Light_Provider.getAuthority(this),
-                Bundle.EMPTY
-        );
+            ContentResolver.setSyncAutomatically(Aware.getAWAREAccount(this), Light_Provider.getAuthority(this), false);
+            ContentResolver.removePeriodicSync(
+                    Aware.getAWAREAccount(this),
+                    Light_Provider.getAuthority(this),
+                    Bundle.EMPTY
+            );
+        } else {
+            //HACK: Manually disable because light sensor was not found
+            Aware.setSetting(getApplicationContext(), Aware_Preferences.STATUS_LIGHT, false);
+            Intent sensorIntent = new Intent();
+            sensorIntent.setAction(PermissionUtils.SENSOR_PREFERENCE_UPDATED);
+            sensorIntent.putExtra(PermissionUtils.MULTIPLE_PREFERENCES_UPDATED, false);
+            sensorIntent.putExtra(PermissionUtils.SENSOR_PREFERENCE, Aware_Preferences.STATUS_LIGHT);
+            sensorIntent.putExtra(PermissionUtils.PREFERENCE_UPDATE_DISPLAY, "Light sensor was not found in this device and has been disabled.");
+            sendBroadcast(sensorIntent);
+        }
+
 
         if (Aware.DEBUG) Log.d(TAG, "Light service terminated...");
     }
@@ -253,8 +266,8 @@ public class Light extends Aware_Sensor implements SensorEventListener {
         if (PERMISSIONS_OK) {
             if (mLight == null) {
                 if (Aware.DEBUG) Log.w(TAG, "This device does not have a light sensor!");
-                Aware.setSetting(this, Aware_Preferences.STATUS_LIGHT, false);
                 stopSelf();
+                return START_NOT_STICKY;
             } else {
                 DEBUG = Aware.getSetting(this, Aware_Preferences.DEBUG_FLAG).equals("true");
                 Aware.setSetting(this, Aware_Preferences.STATUS_LIGHT, true);
