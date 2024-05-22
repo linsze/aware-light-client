@@ -1,12 +1,12 @@
 """
 Author: Lin Sze Khoo
 Created on: 24/01/2024
-Last modified on: 14/05/2024
+Last modified on: 22/05/2024
 """
 import json
 import math
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from itertools import product
 
 import findspark
@@ -40,7 +40,7 @@ def get_user_table(cursor, table_name, device_id):
     return headers, result
 
 def delete_emulator_device(cursor, db):
-    cursor.execute("DELETE FROM aware_device WHERE device='emu64xa'")
+    cursor.execute("DELETE FROM aware_device WHERE device='emu64xaif t is no'")
     db.commit()
 
 def delete_single_entry(cursor, table_name, device_id):
@@ -93,10 +93,22 @@ def outliers_from_rolling_average(df, value_col):
     print(f"Number of rows flagged as outliers: {outliers.count()}")
     outliers.show()
 
-def fill_df_hour_minute(cur_df):
+def round_time_to_nearest_n_minutes(dt, n):
+    """
+    Rounds input timestamp to the nearest n minutes for synchronization.
+    """
+    seconds = (dt - dt.min).seconds
+    rounding = (seconds + n * 30) // (n * 60) * (n * 60)
+    return dt + timedelta(0, rounding - seconds, -dt.microsecond)
+
+
+def fill_df_hour_minute(cur_df, minute_interval=1):
+    """
+    Fills dataframe with missing entries of hour and minute of available dates.
+    """
     time_cols = ["date", "hour", "minute"]
     unique_dates = np.array(cur_df.select("date").distinct().collect()).flatten().tolist()
-    minute_range = list(range(0, 60))
+    minute_range = list(range(0, 60, minute_interval))
     hour_range = list(range(0, 24))
     date_hour_minute = list(product(unique_dates, hour_range, minute_range))
     time_df = spark.createDataFrame(date_hour_minute, schema=StructType(
@@ -104,6 +116,16 @@ def fill_df_hour_minute(cur_df):
          StructField("hour", IntegerType(), False),
          StructField("minute", IntegerType(), False)]))\
          .sort(time_cols)
+    
+    # Round existing date time to nearest minute if the specified minute interval is greater than 1
+    if minute_interval > 1:
+        cur_df = cur_df.withColumn("date_time", udf_generate_datetime(F.col("date"), F.col("hour"), F.col("minute")))\
+            .withColumn("rounded_date_time", udf_round_datetime_to_nearest_minute(F.col("date_time"), F.lit(minute_interval)))\
+            .withColumn("date", udf_get_date_from_datetime("rounded_date_time"))\
+            .withColumn("hour", udf_get_hour_from_datetime("rounded_date_time"))\
+            .withColumn("minute", udf_get_minute_from_datetime("rounded_date_time"))\
+            .drop("date_time", "rounded_date_time")
+        cur_df = cur_df.groupBy(*time_cols).agg(F.mean("average_decibels_minute").alias("average_decibels_minute"))
     
     # First row of dataframe
     first_entry = cur_df.first()
@@ -128,149 +150,187 @@ def fill_df_hour_minute(cur_df):
         .sort(time_cols)
     return cur_df
 
-def process_light_data(user_id):
+def nearest_neighbour_interpolation(feature_list):
     """
-    (Continuous)
-    Ambient luminance data: interpolate missing data using nearest neighbour interpolation based on https://dl.acm.org/doi/pdf/10.1145/3510029
+    Nearest neighbour interpolation of missing data based on https://dl.acm.org/doi/pdf/10.1145/3510029
+    """
+    time = list(range(len(feature_list)))
+    initial_time = [index for index in range(
+        len(feature_list)) if not math.isnan(feature_list[index])]
+    initial_feature_list = [
+        feat for feat in feature_list if not math.isnan(feat)]
+    interp_func = interp1d(
+        initial_time, initial_feature_list, kind="nearest", fill_value="extrapolate")
+    feature_list = interp_func(time)
+    return feature_list
+
+def process_light_data(user_id, data_minute_interval=1):
+    """
+    Ambient luminance data
 
     NOTE Assumptions:
-    1. Exclude extremely high luminance from analysis
-    2. Exclude outliers detected from applying rolling average
+    1. Latest sensing configuration sets to collect data every 10 mins but may have more frequent entries when an absolute change of 10% is detected.
     """
     parquet_filename = f"{DATA_FOLDER}/{user_id}_light.parquet"
     if not os.path.exists(parquet_filename):
-        minutes = lambda i: i * 60000 # Timestamp is in milliseconds
-        # Light (continuous)
         light_df = spark.read.option("header", True).csv(f"{DATA_FOLDER}/{user_id}_light.csv")
         time_cols = ["date", "hour", "minute"]
 
         # Moving average to smooth the data and identify outliers
         light_df = light_df.withColumn("double_light_lux", F.col("double_light_lux").cast(FloatType()))\
             .withColumn("timestamp", F.col("timestamp").cast(FloatType()))\
+            .withColumn("second_timestamp", F.round(F.col("timestamp")/1000).cast(TimestampType()))\
+            .withColumn("second_timestamp", udf_round_datetime_to_nearest_minute(F.col("second_timestamp"), F.lit(data_minute_interval)))\
             .withColumn("hour", F.col("hour").cast(IntegerType()))\
             .withColumn("minute", F.col("minute").cast(IntegerType()))\
             .sort(time_cols)
-        smooth_window = (Window()\
-            .partitionBy(F.col("date"))\
-            .orderBy(F.col("timestamp"))\
-            .rangeBetween(-minutes(1), 0))
+        time_window = Window.partitionBy("date").orderBy("timestamp")
+        light_df = light_df.withColumn("prev_lux", F.lag(F.col("double_light_lux")).over(time_window))\
+            .withColumn("percentage_change", F.abs(F.col("double_light_lux") - F.col("prev_lux")) / F.col("prev_lux"))\
+            .filter(F.col("percentage_change") > 0.1)
         
-        # NOTE: Ignores extremely high lumination occuring at 01/02/2024 23:06 and outliers based on assumed threshold
-        light_df = light_df.filter(F.col("double_light_lux") <= 2000)
-        light_df = light_df.withColumn("rolling_light_lux", F.mean("double_light_lux").over(smooth_window))
-        light_df = light_df.withColumn("residuals", F.col("double_light_lux") - F.col("rolling_light_lux"))
+        # Obtain statistical descriptors within each 1-minute time window (30 seconds buffer for the 30-second sampling duration)      
+        stat_functions = [F.min, F.max, F.mean, F.stddev]
+        stat_names = ["min", "max", "mean", "std"]
+        agg_expressions = [stat_functions[index]("double_light_lux").alias(f"{stat_names[index]}_light_lux") for index in range(len(stat_functions))]
 
-        # NOTE: Exclude outliers based on standard deviation of difference between initial value and rolling average
-        outlier_threshold = 2 * light_df.select(F.stddev("residuals")).first()[0]
-        light_df = light_df.withColumn("potential_outlier", F.when((F.abs("residuals") > outlier_threshold), True).otherwise(False))
-        light_df = light_df.filter(F.col("potential_outlier") == False)
+        light_df = light_df.withWatermark("second_timestamp", "1 minute")\
+            .groupBy(F.window("second_timestamp", "1 minute"))\
+            .agg(*agg_expressions)\
+            .withColumn("start_timestamp", F.col("window.start"))\
+            .withColumn("end_timestamp", F.col("window.end"))\
+            .withColumn("date", udf_get_date_from_datetime("start_timestamp"))\
+            .withColumn("hour", udf_get_hour_from_datetime("start_timestamp"))\
+            .withColumn("minute", udf_get_minute_from_datetime("start_timestamp"))\
+            .drop("window", "start_timestamp", "end_timestamp").sort(*time_cols)
 
-        light_df = light_df.groupBy(*time_cols)\
-            .agg(F.mean("double_light_lux").alias("average_lux_minute"))\
-            .withColumn("hour", F.col("hour").cast(IntegerType()))\
-            .withColumn("minute", F.col("minute").cast(IntegerType()))\
-            .sort(time_cols)
+        # minutes = lambda i: i * 60000 # Timestamp is in milliseconds
+        # smooth_window = (Window()\
+        #     .partitionBy(F.col("date"))\
+        #     .orderBy(F.col("timestamp"))\
+        #     .rangeBetween(-minutes(1), 0))
         
-        # Fill in missing time points
-        light_df = fill_df_hour_minute(light_df)
-        light_df = light_df.toPandas()
-        feature_ts = light_df["average_lux_minute"]
+    #     # NOTE: Ignores extremely high lumination occuring at 01/02/2024 23:06 and outliers based on assumed threshold
+    #     # light_df = light_df.filter(F.col("double_light_lux") <= 2000)
+    #     light_df = light_df.withColumn("rolling_light_lux", F.mean("double_light_lux").over(smooth_window))
+    #     light_df = light_df.withColumn("residuals", F.col("double_light_lux") - F.col("rolling_light_lux"))
 
-        # Perform interpolation to fill in nan values
-        feature_ts = [float(t) for t in feature_ts]
-        if np.isnan(np.min(feature_ts)):
-            # Nearest neighbour interpolation based on 
-            time = list(range(len(feature_ts)))
-            initial_time = [index for index in range(
-                len(feature_ts)) if not math.isnan(feature_ts[index])]
-            initial_feature_ts = [
-                feat for feat in feature_ts if not math.isnan(feat)]
-            interp_func = interp1d(
-                initial_time, initial_feature_ts, kind="nearest", fill_value="extrapolate")
-            feature_ts = interp_func(time)
+    #     # NOTE: Exclude outliers based on standard deviation of difference between initial value and rolling average
+    #     outlier_threshold = 2 * light_df.select(F.stddev("residuals")).first()[0]
+    #     light_df = light_df.withColumn("potential_outlier", F.when((F.abs("residuals") > outlier_threshold), True).otherwise(False))
+    #     light_df = light_df.filter(F.col("potential_outlier") == False)
         
-        light_df["average_lux_minute"] = feature_ts
-        light_df = spark.createDataFrame(light_df.values.tolist(), schema=StructType([StructField("date", StringType()),\
-                                                                           StructField("hour", IntegerType()),\
-                                                                           StructField("minute", IntegerType()),\
-                                                                           StructField("average_lux_minute", FloatType())]))
+    #     # Fill in missing time points
+    #     light_df = fill_df_hour_minute(light_df, data_minute_interval)
+    #     light_df = light_df.toPandas()
+    #     feature_ts = light_df["average_lux_minute"]
+
+    #     # Perform interpolation to fill in nan values
+    #     feature_ts = [float(t) for t in feature_ts]
+    #     if np.isnan(np.min(feature_ts)):
+    #         feature_ts = nearest_neighbour_interpolation(feature_ts)
+    #     light_df["average_lux_minute"] = feature_ts
+    #     light_df = spark.createDataFrame(light_df.values.tolist(), schema=StructType([StructField("date", StringType()),\
+    #                                                                        StructField("hour", IntegerType()),\
+    #                                                                        StructField("minute", IntegerType()),\
+    #                                                                        StructField("average_lux_minute", FloatType())]))
         light_df.write.parquet(parquet_filename)
     
     light_df = spark.read.parquet(parquet_filename)
-    # viz_light = light_df
-    # # viz_light = light_df.loc[light_df["date"] == first_entry["date"]]
-    # viz_light["hour_min"] = viz_light["hour"].astype(str).str.cat(viz_light["minute"].astype(str), sep=" : ")
-    # plt.plot(viz_light["hour_min"], viz_light["average_lux_minute"])
-    # plt.show()
-
     return light_df
 
-def process_noise_data(user_id):
+def process_noise_data(user_id, data_minute_interval=1):
     """
-    Ambient audio data: interpolate missing data using nearest neighbour interpolation based on https://dl.acm.org/doi/pdf/10.1145/3510029
+    (Continuous with intervals)
+    Ambient audio data
+    
+    NOTE:
+    1. Latest sensing configuration sets to collect data for 30 seconds every 10 mins
+    2. Round timestamp to the nearest 5-minute and compute statistical features over each sampling window
     """
     parquet_filename = f"{DATA_FOLDER}/{user_id}_noise.parquet"
     if not os.path.exists(parquet_filename):
         noise_df = spark.read.option("header", True).csv(f"{DATA_FOLDER}/{user_id}_plugin_ambient_noise.csv")
         time_cols = ["date", "hour", "minute"]
-        noise_df = noise_df.withColumn("double_decibels", F.col("double_decibels").cast(FloatType()))\
+        noise_df = noise_df.withColumn("double_frequency", F.col("double_frequency").cast(FloatType()))\
+            .withColumn("double_decibels", F.col("double_decibels").cast(FloatType()))\
+            .withColumn("double_rms", F.col("double_rms").cast(FloatType()))\
             .withColumn("timestamp", F.col("timestamp").cast(FloatType()))\
+            .withColumn("second_timestamp", F.round(F.col("timestamp")/1000).cast(TimestampType()))\
+            .withColumn("second_timestamp", udf_round_datetime_to_nearest_minute(F.col("second_timestamp"), F.lit(data_minute_interval)))\
             .withColumn("hour", F.col("hour").cast(IntegerType()))\
             .withColumn("minute", F.col("minute").cast(IntegerType()))\
             .sort(time_cols)
         
-        noise_df = noise_df.groupBy(*time_cols)\
-            .agg(F.mean("double_decibels").alias("average_decibels_minute"))\
-            .withColumn("hour", F.col("hour").cast(IntegerType()))\
-            .withColumn("minute", F.col("minute").cast(IntegerType()))\
-            .sort(time_cols)
-        
-        # Fill in missing time points
-        noise_df = fill_df_hour_minute(noise_df)
-        noise_df = noise_df.toPandas()
-        feature_ts = noise_df["average_decibels_minute"]
+        # Obtain statistical descriptors within each 1-minute time window (30 seconds buffer for the 30-second sampling duration)      
+        stat_functions = [F.min, F.max, F.mean, F.stddev]
+        stat_names = ["min", "max", "mean", "std"]
+        agg_expressions = []
+        agg_cols = [col for col in noise_df.columns if col.startswith("double_") and col != "double_silence_threshold"]
+        for col in agg_cols:
+            for index, func in enumerate(stat_functions):
+                agg_expressions.append(func(col).alias(f"{stat_names[index]}_{col[7:]}"))
+        noise_df = noise_df.withWatermark("second_timestamp", "1 minute")\
+            .groupBy(F.window("second_timestamp", "1 minute"))\
+            .agg(*agg_expressions)\
+            .withColumn("start_timestamp", F.col("window.start"))\
+            .withColumn("end_timestamp", F.col("window.end"))\
+            .withColumn("date", udf_get_date_from_datetime("start_timestamp"))\
+            .withColumn("hour", udf_get_hour_from_datetime("start_timestamp"))\
+            .withColumn("minute", udf_get_minute_from_datetime("start_timestamp"))\
+            .drop("window", "start_timestamp", "end_timestamp").sort(*time_cols)
 
-        # Perform interpolation to fill in nan values
-        feature_ts = [float(t) for t in feature_ts]
-        if np.isnan(np.min(feature_ts)):
-            # Nearest neighbour interpolation based on 
-            time = list(range(len(feature_ts)))
-            initial_time = [index for index in range(
-                len(feature_ts)) if not math.isnan(feature_ts[index])]
-            initial_feature_ts = [
-                feat for feat in feature_ts if not math.isnan(feat)]
-            interp_func = interp1d(
-                initial_time, initial_feature_ts, kind="nearest", fill_value="extrapolate")
-            feature_ts = interp_func(time)
-        
-        noise_df["average_decibels_minute"] = feature_ts
-        standard_dev = np.std(feature_ts)
-        mean = np.mean(feature_ts)
-        outlier_threshold = 2 * standard_dev
-        noise_df["potential_outlier"] = noise_df["average_decibels_minute"] - mean > outlier_threshold
-        noise_df = spark.createDataFrame(noise_df.values.tolist(), schema=StructType([StructField("date", StringType()),\
-                                                                                        StructField("hour", IntegerType()),\
-                                                                                        StructField("minute", IntegerType()),\
-                                                                                        StructField("average_decibels_minute", FloatType()),\
-                                                                                        StructField("potential_outlier", BooleanType())]))
+        # Fill in missing time points
+        # noise_df = fill_df_hour_minute(noise_df, data_minute_interval)
+        # noise_df = noise_df.toPandas()
+        # feature_ts = noise_df["average_decibels_minute"]
+
+        # # Perform interpolation to fill in nan values
+        # feature_ts = [float(t) for t in feature_ts]
+        # if np.isnan(np.min(feature_ts)):
+        #     feature_ts = nearest_neighbour_interpolation(feature_ts)
+        # noise_df["average_decibels_minute"] = feature_ts
+        # standard_dev = np.std(feature_ts)
+        # mean = np.mean(feature_ts)
+        # outlier_threshold = 2 * standard_dev
+        # noise_df["potential_outlier"] = noise_df["average_decibels_minute"] - mean > outlier_threshold
+        # noise_df = spark.createDataFrame(noise_df.values.tolist(), schema=StructType([StructField("date", StringType()),\
+        #                                                                                 StructField("hour", IntegerType()),\
+        #                                                                                 StructField("minute", IntegerType()),\
+        #                                                                                 StructField("average_decibels_minute", FloatType()),\
+        #                                                                                 StructField("potential_outlier", BooleanType())]))
         noise_df.write.parquet(parquet_filename)
 
     noise_df = spark.read.parquet(parquet_filename)
-    # viz_light = noise_df.loc[noise_df["date"] == "2024-02-02"]
-    # viz_light["hour_min"] = viz_light["hour"].astype(str).str.cat(viz_light["minute"].astype(str), sep=" : ")
-    # plt.plot(viz_light["hour_min"], viz_light["average_decibels_minute"])
-
-    # plt.scatter(viz_light[viz_light["potential_outlier"]]["hour_min"], viz_light[viz_light["potential_outlier"]]["average_decibels_minute"], color='red', marker='*')
-    # plt.show()
     return noise_df
+
+def extract_max_confidence_activity(activity_confidence):
+    """
+    Extracts one or more activities with the highest confidence
+    
+    NOTE: Running and walking are subtypes of on_foot, so retain the prior to be more precise if both co-exist
+    https://developers.google.com/android/reference/com/google/android/gms/location/DetectedActivity
+    """
+    max_confidence = max(activity_confidence, key=lambda x: x["confidence"])["confidence"]  
+    max_activities = [conf for conf in activity_confidence if conf["confidence"] == max_confidence]
+    activity_list = [conf["activity"] for conf in max_activities]
+
+    # Check if on_foot coexists with more precise walking or running
+    if len(activity_list) > 1 and "on_foot" in activity_list:
+        remove_index = activity_list.index("on_foot")
+        max_activities.pop(remove_index)
+
+    return max_activities
 
 def process_activity_data(user_id):
     """
-    (Continuous)
-    Activity recognition data: interpolate missing values based on the previous row
+    (Event-based)
+    Activity recognition data
 
     NOTE Assumptions:
-    1. Fill in missing values with "still" (activity_type 3) with the assumption that the device is static hence no new entries were recorded to save battery.
+    1. Remove activity inference with confidence lower than 50 (majorly "unknown" activity)
+    2. Retain all activity inferences with maximum confidence (may have one or more for each entry)
+    3. Retain only "walking" or "running" activity type if they co-exist with "on_foot" since they are more precise subtypes.
     """
     parquet_filename = f"{DATA_FOLDER}/{user_id}_activity.parquet"
     if not os.path.exists(parquet_filename):
@@ -281,34 +341,19 @@ def process_activity_data(user_id):
             .withColumn("hour", F.col("hour").cast(IntegerType()))\
             .withColumn("minute", F.col("minute").cast(IntegerType()))\
             .withColumn("day_of_the_week", F.col("day_of_the_week").cast(IntegerType()))\
-            .sort(time_cols)
+            .withColumn("activities", F.from_json(F.col("activities"), activity_confidence_schema))
 
-        # Fill in missing values
-        activity_df = fill_df_hour_minute(activity_df)
-        activity_df = activity_df.withColumn("activity_type", F.when(F.col("activity_type").isNull(), 3).otherwise(F.col("activity_type")))\
-            .withColumn("activity_name", F.when(F.col("activity_name").isNull(), "still").otherwise(F.col("activity_name")))\
-            .sort(*time_cols)
-
-        # Calculate duration of each continuous activity state
-        time_window = Window().partitionBy(F.col("date")).orderBy(*time_cols)
-        activity_df = activity_df.withColumn("prev_activity", F.lag(F.col("activity_type")).over(time_window))
-        activity_df = activity_df.withColumn("activity_duration", F.when(F.col("activity_type") == F.col("prev_activity"), 1).otherwise(0))\
-            .drop("prev_activity")
+        # Find activities with max confidence of above 50 and explode into one or more rows
+        activity_df = activity_df.withColumn("max_activities", udf_extract_max_confidence_activity("activities"))\
+            .withColumn("activities", F.explode(F.col("max_activities")))\
+            .withColumn("activity_name", F.col("activities.activity"))\
+            .withColumn("confidence", F.col("activities.confidence"))\
+            .withColumn("activity_type", udf_map_activity_name_to_type("activity_name"))\
+            .filter(F.col("confidence") > 50).sort(*time_cols)
+        activity_df = activity_df.select(*time_cols + ["timestamp", "activity_name", "activity_type", "confidence"]).sort("timestamp")
         activity_df.write.parquet(parquet_filename)
     
     activity_df = spark.read.parquet(parquet_filename)
-    # Count the frequency of each activity type
-    activity_freq = activity_df.groupBy("date", "activity_name").agg(F.count("activity_name").alias("day_activity_count"))
-    viz_activity_freq = activity_freq.toPandas()
-    viz_activity_freq = viz_activity_freq.loc[viz_activity_freq["date"] == "2024-02-01"]
-    # viz_activity_freq["hour_min"] = viz_activity_freq["hour"].astype(str).str.cat(viz_activity_freq["minute"].astype(str), sep=" : ")
-    # plt.bar(viz_activity_freq["activity_name"], viz_activity_freq["day_activity_count"])
-    # plt.show()
-
-    # viz_activity = activity_df.toPandas()
-    # viz_activity["hour_min"] = viz_activity["date"].str.cat(viz_activity["hour"].astype(str).str.cat(viz_activity["minute"].astype(str), sep=" : "), sep=" ")
-    # plt.plot(viz_activity["hour_min"], viz_activity["activity_type"])
-    # plt.show()
 
     return activity_df
 
@@ -318,22 +363,24 @@ def process_screen_data(user_id):
     Screen status data: currently does not attempt to identify missing data
     NOTE: Device usage plugin readily provides usage (screen unlocked) and non-usage duration (screen off)
     """
-    screen_df = spark.read.option("header", True).csv(f"{DATA_FOLDER}/{user_id}_screen.csv")
-    usage_df = spark.read.option("header", True).csv(f"{DATA_FOLDER}/{user_id}_plugin_device_usage.csv")
-    time_cols = ["date", "hour", "minute"]
-
-    screen_df = screen_df.withColumn("timestamp", F.col("timestamp").cast(FloatType()))\
-        .withColumn("hour", F.col("hour").cast(IntegerType()))\
-        .withColumn("minute", F.col("minute").cast(IntegerType()))\
-        .withColumn("day_of_the_week", F.col("day_of_the_week").cast(IntegerType()))\
-        .sort(time_cols)
-    usage_df = usage_df.withColumn("timestamp", F.col("timestamp").cast(FloatType()))\
-        .withColumn("hour", F.col("hour").cast(IntegerType()))\
-        .withColumn("minute", F.col("minute").cast(IntegerType()))\
-        .withColumn("day_of_the_week", F.col("day_of_the_week").cast(IntegerType()))\
-        .withColumn("double_elapsed_device_on", F.col("double_elapsed_device_on").cast(LongType()))\
-        .withColumn("double_elapsed_device_off", F.col("double_elapsed_device_off").cast(LongType()))\
-        .sort(time_cols)
+    parquet_filename = f"{DATA_FOLDER}/{user_id}_screen.parquet"
+    if not os.path.exists(parquet_filename):
+        screen_df = spark.read.option("header", True).csv(f"{DATA_FOLDER}/{user_id}_screen.csv")
+        time_cols = ["date", "hour", "minute"]
+        time_window = Window.partitionBy("date").orderBy("timestamp")
+        screen_df = screen_df.withColumn("timestamp", F.col("timestamp").cast(FloatType()))\
+            .withColumn("hour", F.col("hour").cast(IntegerType()))\
+            .withColumn("minute", F.col("minute").cast(IntegerType()))\
+            .withColumn("day_of_the_week", F.col("day_of_the_week").cast(IntegerType()))\
+            .sort(time_cols)
+        screen_df = screen_df.withColumn("prev_timestamp", F.lag(F.col("timestamp")).over(time_window))\
+            .withColumn("duration (ms)", (F.col("timestamp") - F.col("prev_timestamp")).cast(IntegerType()))\
+            .withColumn("prev_status", F.lag(F.col("screen_status")).over(time_window))\
+            .sort("timestamp")
+        screen_df.write.parquet(parquet_filename)
+    
+    screen_df = spark.read.parquet(parquet_filename)
+    return screen_df
 
 def process_application_usage_data(user_id):
     """
@@ -572,6 +619,9 @@ def complement_location_data(user_id):
         prev_null_count = 0
         cur_null_count = all_locations.filter(F.col("cluster_id").isNull()).count()
 
+        time_window = Window.partitionBy("date")\
+            .orderBy("hour", "minute")
+
         # Filling in cluster_ids for existing WiFi devices based on direct and indirect coexistence
         while cur_null_count != prev_null_count:
             prev_null_count = cur_null_count
@@ -624,106 +674,166 @@ def complement_location_data(user_id):
     return all_locations
 
 
-def estimate_sleep(user_id):
+def interval_join(df1, df2):
+    """
+    Joins and finds overlapping duration of start and end times between input dataframes.
+    """
+    return df1.crossJoin(df2)\
+        .filter((df1["start_datetime"] <= df2["end_datetime"]) & (df1["end_datetime"] >= df2["start_datetime"]))\
+        .select(F.greatest(df1["start_datetime"], df2["start_datetime"]).alias("start_datetime"),\
+                F.least(df1["end_datetime"], df2["end_datetime"]).alias("end_datetime"),\
+                *[col for col in df1.columns + df2.columns if "_datetime" not in col])\
+        .sort("start_datetime")
+
+def outer_join_by_intervals(df1, df2, condition):
+    """
+    Performs outer join to accept situations where input df2 does not fulfill all conditions.
+    """
+    return df1.join(df2, (df2["start_datetime"] <= df1["overall_end_datetime"]) &\
+                (df2["end_datetime"] >= df1["overall_start_datetime"]), "right")\
+        .withColumn("condition", F.when(F.col("overall_start_datetime").isNull(), condition).otherwise("all"))\
+        .withColumn("overall_start_datetime", F.greatest(F.col("overall_start_datetime"), F.col("start_datetime")))\
+        .withColumn("overall_end_datetime", F.least(F.col("overall_end_datetime"), F.col("end_datetime")))\
+        .drop("start_datetime", "end_datetime").dropDuplicates().sort("overall_start_datetime")
+
+def estimate_sleep(user_id, with_allowance=False):
     """
     Estimate sleep duration based on information from light, noise, activity and phone screen.
+    V1 method finds overlapping duration when all conditions are fulfilled (dark env, quiet env, stationary, phone not in use).
+    V2 method allows if only 3 out of the 4 conditions are fulfilled.
 
     NOTE Assumptions:
-    1. When conditions are fulfilled for consecutive entries within 5 minutes
-    2. Environment may not be completely quiet and/or dark
-    3. Does not limit to 1 estimated entry per day
-    4. Remove those with duration shorter than 1 hour
+    1. When conditions are fulfilled for at least 5 minutes consecutively
+    2. Environment may not be completely quiet and/or dark - thresholds are computed based on relative distribution
+    3. Remove those with duration shorter than 1 hour
     """
-    parquet_filename = f"{DATA_FOLDER}/{user_id}_sleep.parquet"
+    parquet_filename = f"{DATA_FOLDER}/{user_id}_sleep" + (
+        "_optional" if with_allowance else "") + ".parquet"
     if not os.path.exists(parquet_filename):
         time_cols = ["date", "hour", "minute"]
-        time_window = Window.partitionBy("date")\
-            .orderBy(*time_cols)
+        time_window = Window.partitionBy("date").orderBy(*time_cols)
         consecutive_min = 5
-        consecutive_window = Window.partitionBy("date")\
-            .orderBy(*time_cols)\
-            .rowsBetween(0, 4)
+
+        light_df = process_light_data(user_id)
+        brightness_quartiles = light_df.approxQuantile("mean_light_lux", [0.25, 0.50], 0.01)
+        dark_threshold = round(brightness_quartiles[1])
+
+        light_df = light_df.withColumn("datetime", udf_generate_datetime(F.col("date"), F.col("hour"), F.col("minute")))\
+            .withColumn("is_dark", F.when(F.col("mean_light_lux") <= dark_threshold, 1).otherwise(0))\
+            .withColumn("prev_is_dark", F.lag(F.col("is_dark")).over(time_window))\
+            .withColumn("prev_datetime", F.lag(F.col("datetime")).over(time_window))
+        # Consolidate consecutive rows with the same condition by assigning them to the same group until a transition occurs
+        # NOTE: There are only 2 states so a new entry indicates a transition from the other state
+        light_df = light_df.withColumn("new_group", (F.col("is_dark") != F.col("prev_is_dark")).cast("int"))\
+            .withColumn("group_id", F.sum("new_group").over(Window.orderBy("datetime").rowsBetween(Window.unboundedPreceding, Window.currentRow)))\
+            .groupBy("group_id", "is_dark")\
+            .agg(F.min("datetime").alias("start_datetime"),\
+                 F.max("datetime").alias("end_datetime"), \
+                 F.mean("mean_light_lux").alias("mean_light_lux"))\
+            .withColumn("consecutive_duration", F.unix_timestamp(F.col("end_datetime")) - F.unix_timestamp(F.col("start_datetime")))\
+            .drop("group_id").sort("start_datetime")
+        dark_df = light_df.filter((F.col("is_dark") == 1) & (F.col("consecutive_duration") > consecutive_min*60))\
+            .drop("is_dark", "consecutive_duration").sort("start_datetime")
         
-        dark_threshold = 10 
-        light_df = process_light_data(user_id)\
-            .withColumn("is_dark", F.when(F.col("average_lux_minute") <= dark_threshold, 1).otherwise(0))\
-            .withColumn("consecutive_dark_count", F.sum("is_dark").over(consecutive_window))
-        dark_df = light_df.filter(F.col("consecutive_dark_count") >= consecutive_min)\
-            .withColumn("dark_datetime", udf_generate_datetime(F.col("date"), F.col("hour"), F.col("minute")))\
-            .select("dark_datetime", "average_lux_minute")
-        bright_transition_df = light_df.withColumn("prev_is_dark", F.lag(F.col("is_dark")).over(time_window))\
-            .filter((F.col("prev_is_dark") == 1) & (F.col("is_dark") == 0))\
-            .withColumn("bright_transition_datetime", udf_generate_datetime(F.col("date"), F.col("hour"), F.col("minute")))
         
+
         noise_df = process_noise_data(user_id)
-        audio_quartiles = noise_df.approxQuantile("average_decibels_minute", [0.25, 0.50], 0.01)
+        audio_quartiles = noise_df.approxQuantile("mean_decibels", [0.25, 0.50], 0.01)
         # silence_threshold = round((audio_quartiles[1]-audio_quartiles[0]) / 2)
         silence_threshold = round(audio_quartiles[1])
-        noise_df = noise_df\
-            .withColumn("is_quiet", F.when(F.col("average_decibels_minute") <= silence_threshold, 1).otherwise(0))\
-            .withColumn("consecutive_quiet_count", F.sum("is_quiet").over(consecutive_window))
-        quiet_df = noise_df.filter(F.col("consecutive_quiet_count") >= consecutive_min)\
-            .withColumn("quiet_datetime", udf_generate_datetime(F.col("date"), F.col("hour"), F.col("minute")))\
-            .select("quiet_datetime", "average_decibels_minute")
-        noise_transition_df = noise_df.withColumn("prev_is_quiet", F.lag(F.col("is_quiet")).over(time_window))\
-            .filter((F.col("prev_is_quiet") == 1) & (F.col("is_quiet") == 0))\
-            .withColumn("noise_transition_datetime", udf_generate_datetime(F.col("date"), F.col("hour"), F.col("minute")))
 
+        noise_df = noise_df.withColumn("datetime", udf_generate_datetime(F.col("date"), F.col("hour"), F.col("minute")))\
+            .withColumn("is_quiet", F.when(F.col("mean_decibels") <= silence_threshold, 1).otherwise(0))\
+            .withColumn("prev_is_quiet", F.lag(F.col("is_quiet")).over(time_window))\
+            .withColumn("prev_datetime", F.lag(F.col("datetime")).over(time_window))
+        noise_df = noise_df.withColumn("new_group", (F.col("is_quiet") != F.col("prev_is_quiet")).cast("int"))\
+            .withColumn("group_id", F.sum("new_group").over(Window.orderBy("datetime").rowsBetween(Window.unboundedPreceding, Window.currentRow)))\
+            .groupBy("group_id", "is_quiet")\
+            .agg(F.min("datetime").alias("start_datetime"),\
+                 F.max("datetime").alias("end_datetime"), \
+                 F.mean("mean_decibels").alias("mean_decibels"))\
+            .withColumn("consecutive_duration", F.unix_timestamp(F.col("end_datetime")) - F.unix_timestamp(F.col("start_datetime")))\
+            .drop("group_id").sort("start_datetime")
+        quiet_df = noise_df.filter((F.col("is_quiet") == 1) & (F.col("consecutive_duration") > consecutive_min*60))\
+            .drop("is_quiet", "consecutive_duration").sort("start_datetime")
+
+        
         activity_df = process_activity_data(user_id)\
-            .withColumn("is_still", F.when(F.col("activity_type") == 3, 1).otherwise(0))\
-            .withColumn("consecutive_still_count", F.sum("is_still").over(consecutive_window))
-        stationary_df = activity_df.filter(F.col("consecutive_still_count") >= consecutive_min)\
-            .withColumn("stationary_datetime", udf_generate_datetime(F.col("date"), F.col("hour"), F.col("minute")))\
-            .select("stationary_datetime", "activities")
-        movement_transition_df = activity_df.withColumn("prev_is_still", F.lag(F.col("is_still")).over(time_window))\
-            .filter((F.col("prev_is_still") == 1) & (F.col("is_still") == 0))\
-            .withColumn("movement_transition_datetime", udf_generate_datetime(F.col("date"), F.col("hour"), F.col("minute")))
+            .withColumn("datetime", udf_generate_datetime(F.col("date"), F.col("hour"), F.col("minute")))\
+            .withColumn("next_datetime", F.lead(F.col("datetime")).over(time_window))\
+            .withColumn("prev_activity", F.lag(F.col("activity_type")).over(time_window))\
+            .sort("datetime")
+        activity_df = activity_df.withColumn("new_group", (F.col("activity_type") != F.col("prev_activity")).cast("int"))\
+            .withColumn("group_id", F.sum("new_group").over(Window.orderBy("datetime").rowsBetween(Window.unboundedPreceding, Window.currentRow)))\
+            .groupBy("group_id", "activity_type")\
+            .agg(F.min("datetime").alias("start_datetime"),\
+                 F.max("next_datetime").alias("end_datetime")) \
+            .withColumn("consecutive_duration", F.unix_timestamp(F.col("end_datetime")) - F.unix_timestamp(F.col("start_datetime")))\
+            .drop("group_id").sort("start_datetime")
+        stationary_df = activity_df.filter((F.col("activity_type") == 3) & (F.col("consecutive_duration") >= consecutive_min*60))\
+            .select("start_datetime", "end_datetime").sort("start_datetime")
 
-        screen_df = spark.read.option("header", True).csv(f"{DATA_FOLDER}/{user_id}_plugin_device_usage.csv")
-        off_screen = screen_df.filter(F.col("double_elapsed_device_off") > consecutive_min*60000)\
-            .withColumn("timestamp", F.col("timestamp").cast(FloatType()))\
-            .withColumn("start_timestamp", F.col("timestamp") - F.col("double_elapsed_device_off"))\
-            .withColumn("start_datetime", udf_datetime_from_timestamp(F.col("start_timestamp")))\
-            .withColumn("end_datetime", udf_datetime_from_timestamp(F.col("timestamp")))\
-            .sort("start_datetime")
 
-        # V1
-        # time_diff_allowance = 5*60
-        # sleep_df = dark_env.join(quiet_env, F.abs(F.unix_timestamp(dark_env["dark_datetime"]) - F.unix_timestamp(quiet_env["quiet_datetime"])) <= time_diff_allowance)
-        # sleep_df = sleep_df.join(stationary, ((F.abs(F.unix_timestamp(sleep_df["dark_datetime"]) - F.unix_timestamp(stationary["stationary_datetime"])) <= time_diff_allowance) |\
-        #                        (F.abs(F.unix_timestamp(sleep_df["quiet_datetime"]) - F.unix_timestamp(stationary["stationary_datetime"])) <= time_diff_allowance)))
-        # sleep_df = sleep_df.join(off_screen, (((F.col("dark_datetime") >= F.col("start_datetime")) & (F.col("dark_datetime") <= F.col("end_datetime"))) |\
-        #                                       ((F.col("quiet_datetime") >= F.col("start_datetime")) & (F.col("quiet_datetime") <= F.col("end_datetime"))) | \
-        #                                         ((F.col("stationary_datetime") >= F.col("start_datetime")) & (F.col("stationary_datetime") <= F.col("end_datetime")))))
-
-        # V2
-        sleep_onset_df = dark_df.join(quiet_df, F.col("dark_datetime") == F.col("quiet_datetime"))\
-            .join(stationary_df, F.col("stationary_datetime") == F.col("dark_datetime"))\
-            .join(off_screen, (F.col("dark_datetime") >= F.col("start_datetime")) & (F.col("dark_datetime") <= F.col("end_datetime")))\
-            .withColumn("onset_datetime", F.greatest(F.col("dark_datetime"), F.col("start_datetime")))\
-            .select(*["onset_datetime", "end_datetime", "average_lux_minute", "average_decibels_minute", "activities"])\
-            .dropDuplicates().sort("onset_datetime")
+        screen_df = process_screen_data(user_id)
+        # Only exclude active usage time because phone screen might still be activated by notifications
+        phone_usage_df = screen_df.withColumn("is_in_use", F.when(F.col("prev_status") == 3, 1).otherwise(0))\
+            .withColumn("prev_in_use", F.lag(F.col("is_in_use")).over(time_window))\
+            .withColumn("new_group", (F.col("prev_in_use") != F.col("is_in_use")).cast("int"))\
+            .withColumn("group_id", F.sum("new_group").over(Window.orderBy("timestamp").rowsBetween(Window.unboundedPreceding, Window.currentRow)))\
+            .filter(F.col("prev_timestamp").isNotNull())\
+            .groupBy("group_id", "is_in_use")\
+            .agg(F.min("prev_timestamp").alias("start_datetime"),\
+                 F.max("timestamp").alias("end_datetime"))\
+            .withColumn("consecutive_duration", F.round((F.col("end_datetime") - F.col("start_datetime"))/1000).cast(IntegerType()))\
+            .withColumn("start_datetime", udf_datetime_from_timestamp(F.col("start_datetime")))\
+            .withColumn("end_datetime", udf_datetime_from_timestamp(F.col("end_datetime")))\
+            .drop("group_id").sort("start_datetime")
         
-        sleep_wake_df = off_screen.join(bright_transition_df, (F.col("bright_transition_datetime") >= F.col("start_datetime")))\
-            .join(noise_transition_df, (F.col("noise_transition_datetime") >= F.col("start_datetime")))\
-            .join(movement_transition_df, (F.col("movement_transition_datetime") >= F.col("start_datetime")))\
-            .withColumn("wake_datetime", F.least(F.col("bright_transition_datetime"), F.col("noise_transition_datetime"), F.col("movement_transition_datetime"), F.col("end_datetime")))\
-            .select(*["start_datetime", "wake_datetime"])\
-            .groupBy("start_datetime").agg(F.min("wake_datetime").alias("wake_datetime"))\
-            .dropDuplicates().sort("start_datetime")
-        
-        sleep_df = sleep_onset_df.join(sleep_wake_df, (F.col("onset_datetime") >= F.col("start_datetime")) & (F.col("wake_datetime") <= F.col("end_datetime")))\
-            .withColumn("start_datetime", F.least(F.col("onset_datetime"), F.col("start_datetime")))\
-            .withColumn("end_datetime", F.least(F.col("wake_datetime"), F.col("end_datetime")))\
-            .drop("onset_datetime", "wake_datetime")\
-            .groupBy("start_datetime", "end_datetime").agg(F.min(F.col("average_lux_minute")).alias("minimum_lux_minute"),\
-                                                           F.min(F.col("average_decibels_minute")).alias("minimum_decibels_minute"))\
-            .dropDuplicates().sort("start_datetime")\
-            .withColumn("duration (s)", F.unix_timestamp(F.col("end_datetime")) - F.unix_timestamp(F.col("start_datetime")))\
-            .filter(F.col("duration (s)") >= 3600)\
-            .withColumn("duration (hr)", F.col("duration (s)") / 3600)\
-            .withColumn("onset_time", udf_string_datetime(F.col("start_datetime")))\
-            .withColumn("end_time", udf_string_datetime(F.col("end_datetime")))\
+        # With considerations of screen activation caused by notifications or active phone checking
+        not_in_use_df = phone_usage_df.filter((F.col("is_in_use") == 0) & (F.col("consecutive_duration") > consecutive_min*60))\
+            .drop("is_in_use", "consecutive_duration").sort("start_datetime")
+
+        # V1: Find overlapping intervals when all 4 conditions are fulfilled
+        if not with_allowance:
+            sleep_df = interval_join(interval_join(interval_join(dark_df, quiet_df), stationary_df), not_in_use_df)\
+                .withColumn("condition", F.lit("all"))
+        else:
+            # V2: Optimize to include situations where 3 of the 4 conditions are fulfilled
+            stationary_off_screen_df = interval_join(stationary_df, not_in_use_df)
+            stationary_off_screen_quiet_df = interval_join(stationary_off_screen_df, quiet_df)
+            stationary_off_screen_dark_df = interval_join(stationary_off_screen_df, dark_df)
+
+            dark_quiet_df = interval_join(dark_df, quiet_df)
+            off_screen_dark_quiet_df = interval_join(dark_quiet_df, not_in_use_df)
+            stationary_dark_quiet_df = interval_join(dark_quiet_df, stationary_df)
+
+            all_conditions_df = interval_join(stationary_off_screen_df, dark_quiet_df)\
+                .withColumnRenamed("start_datetime", "overall_start_datetime")\
+                .withColumnRenamed("end_datetime", "overall_end_datetime")
+            
+            all_cols = ["overall_start_datetime", "overall_end_datetime", "mean_light_lux", "mean_decibels", "condition"]
+            sleep_df = outer_join_by_intervals(all_conditions_df.drop("mean_decibels"), stationary_off_screen_quiet_df, "stationary, off screen, quiet")\
+                .select(*all_cols)
+            sleep_df = sleep_df.union(\
+                outer_join_by_intervals(all_conditions_df.drop("mean_light_lux"), stationary_off_screen_dark_df, "stationary, off screen, dark")\
+                    .select(*all_cols))\
+                .dropDuplicates().sort("overall_start_datetime")
+            sleep_df = sleep_df.union(\
+                outer_join_by_intervals(all_conditions_df.drop("mean_light_lux", "mean_decibels"), off_screen_dark_quiet_df, "off screen, quiet, dark"))\
+                .select(*all_cols)\
+                .dropDuplicates().sort("overall_start_datetime")
+            sleep_df = sleep_df.union(\
+                outer_join_by_intervals(all_conditions_df.drop("mean_light_lux", "mean_decibels"), stationary_dark_quiet_df, "stationary, quiet, dark"))\
+                .select(*all_cols)\
+                .dropDuplicates().sort("overall_start_datetime")
+            sleep_df = sleep_df.withColumnRenamed("overall_start_datetime", "start_datetime")\
+                .withColumnRenamed("overall_end_datetime", "end_datetime")
+
+        # NOTE: This block is shared by both V1 and V2 methods
+        sleep_df = sleep_df.withColumn("duration", F.unix_timestamp(F.col("end_datetime")) - F.unix_timestamp(F.col("start_datetime")))\
+            .filter(F.col("duration") >= 3600)\
+            .withColumn("duration (hr)", F.col("duration") / 3600)\
+            .select("start_datetime", "end_datetime", "duration (hr)", "condition", "mean_light_lux", "mean_decibels")\
             .sort("start_datetime")
         sleep_df.write.parquet(parquet_filename)
     
@@ -904,10 +1014,17 @@ def daily_routine(user_id):
     day_locations = day_locations.withColumn("prev_cluster", F.lag(F.col("cluster_id")).over(time_window))\
         .withColumn("prev_location_datetime", F.lag(F.col("location_datetime")).over(time_window))\
         .drop(*time_cols).sort("location_datetime")
+    coordinates_WiFi_devices = day_locations.select(*coordinate_cols + ["WiFi_devices"]).distinct().dropna()\
+        .filter(F.col("WiFi_devices") != "")
+    day_locations = day_locations.join(coordinates_WiFi_devices.withColumnRenamed("WiFi_devices", "temp_WiFi_devices"),\
+                                       coordinate_cols, "left")\
+                                .withColumn("WiFi_devices", F.when(F.col("WiFi_devices") == "", F.col("temp_WiFi_devices")).otherwise(F.col("WiFi_devices")))\
+                                .drop("temp_WiFi_devices").dropDuplicates().sort("location_datetime")\
+                                .fillna("", subset=["WiFi_devices"])
     # day_locations.write.csv(f"{cur_day}_locations.csv", header=True)
     
     # Contexts during location transition: inter cluster travel
-    cluster_transitions = day_locations.filter(F.col("prev_cluster") != F.col("cluster_id"))
+    cluster_transitions = day_locations.filter((F.col("prev_cluster") != F.col("cluster_id")) | (F.col("prev_cluster").isNull()))
     inter_cluster_travel = day_contexts.join(cluster_transitions,\
                                              (F.col("datetime") >= F.col("prev_location_datetime")) &\
                                                 (F.col("datetime") <= F.col("location_datetime")))\
@@ -937,7 +1054,8 @@ def daily_routine(user_id):
     # NOTE: (N+1) cluster analysis will be involved for N cluster transition points
     cluster_contexts_df = None
     cluster_productivity_df = None
-    location_transition_datetimes = np.array(cluster_transitions.select("location_datetime").collect()).flatten()
+    # First row will always be the first filtered row for the day of interest
+    location_transition_datetimes = np.array(cluster_transitions.select("location_datetime").collect()).flatten()[1:]
     location_clusters = np.array(cluster_transitions.select("cluster_id").collect()).flatten()
     for index, location_datetime in enumerate(location_transition_datetimes):
         if index == 0:
@@ -967,8 +1085,8 @@ def daily_routine(user_id):
     cluster_productivity_df = cluster_productivity_df.union(cluster_productivity)
 
     # Construct a dataframe for the current day to be exported to CSV file
-    # cluster_contexts_df.write.csv(f"{cur_day}_cluster_contexts.csv", header=True)
-    # cluster_productivity_df.write.csv(f"{cur_day}_cluster_productivity.csv", header=True)
+    cluster_contexts_df.coalesce(1).write.csv(f"{cur_day}_cluster_contexts.csv", header=True)
+    cluster_productivity_df.coalesce(1).write.csv(f"{cur_day}_cluster_productivity.csv", header=True)
 
 def context_analysis(time_based_contexts, event_based_productivity):
     """
@@ -1024,13 +1142,12 @@ if __name__ == "__main__":
         .getOrCreate()
     sc = spark.sparkContext
 
-    ALL_TABLES = ["applications_crashes", "applications_foreground", "applications_history",\
-                    "applications_notifications", "bluetooth", "gsm", "light", "locations", "network",\
-                    "plugin_ambient_noise", "plugin_device_usage", "plugin_google_activity_recognition",\
-                    "screen", "screentext", "sensor_accelerometer", "sensor_bluetooth", "sensor_light",\
-                    "sensor_wifi", "telephony", "wifi", "esms"]
+    ALL_TABLES = ["applications_foreground", "applications_history", "applications_notifications",\
+                  "bluetooth", "light", "locations", "calls", "messages", "screen", "wifi", "esms",\
+                    "plugin_ambient_noise", "plugin_device_usage", "plugin_google_activity_recognition"]
     DATA_FOLDER = "user_data"
     TIMEZONE = pytz.timezone("Australia/Melbourne")
+    ACTIVITY_NAMES = ["in_vehicle", "on_bicycle", "on_foot", "still", "unknown", "tilting", "", "walking", "running"]
 
     # .astimezone(TIMEZONE)
     # .replace(tzinfo=TIMEZONE)
@@ -1041,8 +1158,17 @@ if __name__ == "__main__":
     udf_get_minute_from_datetime = F.udf(lambda x: x.astimezone(TIMEZONE).time().minute, IntegerType())
     udf_string_datetime = F.udf(lambda x: x.astimezone(TIMEZONE).strftime("%Y-%m-%d %H:%M"), StringType())
     udf_unique_wifi_list = F.udf(lambda x: ", ".join(sorted(list(set(x.split(", "))))), StringType())
+    udf_round_datetime_to_nearest_minute = F.udf(lambda dt, n: round_time_to_nearest_n_minutes(dt, n), TimestampType())
+    udf_map_activity_type_to_name = F.udf(lambda x: ACTIVITY_NAMES[x], StringType())
+    udf_map_activity_name_to_type = F.udf(lambda x: ACTIVITY_NAMES.index(x), IntegerType())
+    activity_confidence_schema = ArrayType(StructType([
+            StructField("activity", StringType(), True),
+            StructField("confidence", IntegerType(), True)
+        ]))
+    udf_extract_max_confidence_activity = F.udf(lambda x: extract_max_confidence_activity(x), activity_confidence_schema)
 
-    user_identifier = "pixel3"
+    # user_identifier = "pixel3"
+    user_identifier = "S2"
 
     # -- NOTE: Only execute this block when db connection is required --
     # with open("database_config.json", 'r') as file:
@@ -1051,18 +1177,18 @@ if __name__ == "__main__":
     # db_connection = mysql.connector.connect(**db_config)
     # db_cursor = db_connection.cursor(buffered=True)
 
-    # Export data from database to local csv
+    # # Export data from database to local csv
     # export_user_data(db_cursor, user_identifier)
 
-    # # Delete emulator devices from aware_device table
-    # delete_emulator_device(db_cursor, db_connection)
+    # # # Delete emulator devices from aware_device table
+    # # delete_emulator_device(db_cursor, db_connection)
 
-    # # Remove entries corresponding to invalid devices from all tables
-    # valid_devices = get_valid_device_id(db_cursor)
-    # for table in ALL_TABLES:
-    #     delete_invalid_device_entries(db_cursor, table, tuple(valid_devices))
-    #     # delete_single_entry(db_cursor, "aware_device", "emu64xa")
-    #     db_connection.commit()
+    # # # Remove entries corresponding to invalid devices from all tables
+    # # valid_devices = get_valid_device_id(db_cursor)
+    # # for table in ALL_TABLES:
+    # #     delete_invalid_device_entries(db_cursor, table, tuple(valid_devices))
+    # #     # delete_single_entry(db_cursor, "aware_device", "emu64xa")
+    # #     db_connection.commit()
 
     # db_cursor.close()
     # db_connection.close()
@@ -1071,7 +1197,7 @@ if __name__ == "__main__":
     # -- NOTE: This block of functions execute the extraction and early processing of sensor data into dataframes
     # process_light_data(user_identifier)
     # process_activity_data(user_identifier)
-    # process_noise_data(user_identifier)
+    # process_noise_data(user_identifier, 5)
     # process_screen_data(user_identifier)
     # process_application_usage_data(user_identifier)
     # process_bluetooth_data(user_identifier)
@@ -1082,9 +1208,9 @@ if __name__ == "__main__":
     # -- NOTE: This block of functions combine multiple sensor information to generate interpretation
     # location_df = process_location_data(user_identifier)
     # cluster_df = cluster_locations(user_identifier, location_df, "double_latitude", "double_longitude")
-    # estimate_sleep(user_identifier)
+    sleep_df = estimate_sleep(user_identifier)
     # complement_location_data(user_identifier)
-    daily_routine(user_identifier)
+    # daily_routine(user_identifier)
     # -- End of block
 
     # ambient_light(user_identifier)
