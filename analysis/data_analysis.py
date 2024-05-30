@@ -1,8 +1,9 @@
 """
 Author: Lin Sze Khoo
 Created on: 24/01/2024
-Last modified on: 24/05/2024
+Last modified on: 30/05/2024
 """
+import collections
 import json
 import math
 import os
@@ -583,6 +584,44 @@ def process_wifi_data(user_id):
     wifi_df = spark.read.parquet(parquet_filename)
     return wifi_df
 
+@F.udf(IntegerType())
+def resolve_cluster_id(cluster_ids, current_ts, prev_ts, next_ts, prev_cluster_ids, next_cluster_ids):
+    """
+    Resolves discrepancies in cluster IDs at the same time point by obtaining the mode cluster ID.
+    If more than one mode cluster IDs are involved, use the cluster ID that co-occur at an adjacent time point.
+    """
+    counts = collections.Counter(cluster_ids)
+    max_count = np.max(list(counts.values()))
+    most_frequent_clusters = []
+    for cluster_id, count in counts.items():
+        if count == max_count:
+            most_frequent_clusters.append(cluster_id)
+    most_frequent_clusters = list(set(most_frequent_clusters))
+
+    if len(most_frequent_clusters) > 1:
+        prev_distance = abs(current_ts - prev_ts) if prev_ts is not None else np.inf
+        next_distance = abs(current_ts - next_ts) if next_ts is not None else np.inf
+        adj_clusters = None
+
+        if prev_distance < next_distance:
+            adj_clusters = prev_cluster_ids
+        else:
+            adj_clusters = next_cluster_ids
+        
+        adj_cluster_counts = collections.Counter(adj_clusters)
+        max_adj_count = np.max(list(adj_cluster_counts.values()))
+        most_frequent_adj_clusters = []
+        for cluster_id, count in adj_cluster_counts.items():
+            if count == max_adj_count:
+                most_frequent_adj_clusters.append(cluster_id)
+        most_frequent_adj_clusters = list(set(most_frequent_adj_clusters))
+        # Make sure that the options for adjacent cluster IDs also exist in the current one
+        most_frequent_adj_clusters = [c for c in most_frequent_adj_clusters if c in most_frequent_clusters]
+        if len(most_frequent_adj_clusters) > 0:
+            most_frequent_clusters = most_frequent_adj_clusters
+
+    return most_frequent_clusters[0]
+
 
 def complement_location_data(user_id):
     """
@@ -591,6 +630,7 @@ def complement_location_data(user_id):
 
     NOTE:
     1. Location coordinates are rounded to 5 decimal places (up to 1 metres) - can also be rounded to 4 dp for 10 metres allowance
+    2. Fill in cluster IDs based on groups of WiFi devices that have co-occur at clusters with known location coordinates.
     """
     parquet_filename = f"{DATA_FOLDER}/{user_id}_combined_location.parquet"
     if not os.path.exists(parquet_filename):
@@ -598,15 +638,21 @@ def complement_location_data(user_id):
         coordinate_cols = ["double_latitude", "double_longitude"]
         location_df = process_location_data(user_id)\
             .withColumn("double_latitude", F.round(F.col("double_latitude"), 5))\
-            .withColumn("double_longitude", F.round(F.col("double_longitude"), 5))
+            .withColumn("double_longitude", F.round(F.col("double_longitude"), 5))\
+            .withColumn("hour", F.col("hour").cast(IntegerType()))\
+            .withColumn("minute", F.col("minute").cast(IntegerType()))
         cluster_df = cluster_locations(user_id, location_df, "double_latitude", "double_longitude")
         # Location clusters are derived from all unique coordinates in location_df so there will be no null cluster_id
         location_df = location_df.join(cluster_df, coordinate_cols).dropDuplicates()
-        wifi_df = process_wifi_data(user_id)
+        wifi_df = process_wifi_data(user_id)\
+            .withColumn("hour", F.col("hour").cast(IntegerType()))\
+            .withColumn("minute", F.col("minute").cast(IntegerType()))
 
         # Combine coordinates and WiFi devices information by date time
         all_locations = location_df.select(*time_cols + coordinate_cols + ["cluster_id"])\
-            .join(wifi_df, time_cols, "outer").dropDuplicates().sort(*time_cols)
+            .join(wifi_df, time_cols, "outer").dropDuplicates().sort(*time_cols)\
+            .withColumn("datetime", udf_generate_datetime(F.col("date"), F.col("hour"), F.col("minute")))
+        
         # Unique WiFi devices that can be directly mapped to location clusters
         unique_ssid_clusters = all_locations.select("cluster_id", "ssid").distinct().dropna()
 
@@ -621,9 +667,6 @@ def complement_location_data(user_id):
         
         prev_null_count = 0
         cur_null_count = all_locations.filter(F.col("cluster_id").isNull()).count()
-
-        time_window = Window.partitionBy("date")\
-            .orderBy("hour", "minute")
 
         # Filling in cluster_ids for existing WiFi devices based on direct and indirect coexistence
         while cur_null_count != prev_null_count:
@@ -645,7 +688,22 @@ def complement_location_data(user_id):
                                             F.array_contains(F.col("WiFi_devices"), F.col("ssid")), "left")\
                 .withColumn("cluster_id", F.coalesce(F.col("cluster_id"), F.col("temp_cluster_id")))\
                 .select(*all_locations.columns).dropDuplicates().sort(*time_cols)
-            
+
+            # Make sure that the filled clusters are consistent if the WiFi devices co-occur at the same time point
+            time_window = Window().partitionBy("date").orderBy("hour", "minute")
+            resolved_cluster = all_locations.groupBy(*time_cols + ["datetime"]).agg(F.collect_list("cluster_id").alias("cluster_ids"))\
+                .withColumn("prev_cluster_ids", F.lag(F.col("cluster_ids")).over(time_window))\
+                .withColumn("next_cluster_ids", F.lead(F.col("cluster_ids")).over(time_window))\
+                .withColumn("prev_datetime", F.lag(F.col("datetime")).over(time_window))\
+                .withColumn("next_datetime", F.lead(F.col("datetime")).over(time_window))\
+                .withColumn("resolved_cluster_id", resolve_cluster_id(F.col("cluster_ids"), F.col("datetime"), 
+                    F.col("prev_datetime"), F.col("next_datetime"), 
+                    F.col("prev_cluster_ids"), F.col("next_cluster_ids")))\
+                .withColumnRenamed("resolved_cluster_id", "cluster_id")
+
+            all_locations = all_locations.drop("cluster_id").join(resolved_cluster.select(*time_cols + ["datetime", "cluster_id"]),\
+                time_cols + ["datetime"], "left").dropDuplicates().sort(*time_cols)
+
             # Fill in those that coexist at the same time points with the newly filled WiFi devices
             # remaining_coexist_ssids = all_locations.groupBy(*time_cols)\
             #     .agg(F.first("cluster_id", ignorenulls=True).alias("temp_cluster_id"))
@@ -653,13 +711,6 @@ def complement_location_data(user_id):
             #     .withColumn("cluster_id", F.coalesce(F.col("cluster_id"), F.col("temp_cluster_id")))\
             #     .drop("temp_cluster_id").sort(*time_cols)
             cur_null_count = all_locations.filter(F.col("cluster_id").isNull()).count()
-
-        # # Unique combinations of available coordinates and list of nearby WiFi devices
-        # unique_semantic_csv = f"{DATA_FOLDER}/{user_id}_unique_coordinate_WiFi.csv"
-        # if not os.path.exists(unique_semantic_csv):
-        #     unique_coordinates_ssid = all_locations.select(*coordinate_cols + ["WiFi_devices"]).distinct().na.drop().sort(*coordinate_cols)
-        #     unique_coordinates_ssid.write.csv(unique_semantic_csv, header=True)
-        # unique_coordinates_ssid = spark.read.option("header", True).csv(unique_semantic_csv)
     
         # # Fill in null coordinates and list of nearby WiFi devices based on available data
         # filled_locations = all_locations.join(unique_coordinates_ssid.withColumnRenamed("WiFi_devices", "available_WiFi_devices"), coordinate_cols, "left")\
@@ -670,7 +721,6 @@ def complement_location_data(user_id):
         #     .withColumn("double_latitude", F.coalesce("double_latitude", "available_latitude"))\
         #     .withColumn("double_longitude", F.coalesce("double_longitude", "available_longitude"))\
         #     .drop("available_latitude", "available_longitude").dropDuplicates().sort(*time_cols)
-        
         all_locations.write.parquet(parquet_filename)
 
     all_locations = spark.read.parquet(parquet_filename)
@@ -858,20 +908,6 @@ def estimate_sleep(user_id, with_allowance=True):
     return sleep_df
 
 
-def phone_productivity(user_id):
-    """
-    Map screen status to app notifications to infer productivity/distraction.
-
-    NOTE Assumptions:
-    1. Remove screen on (status 1) due to notifications since they are not initiated by people themselves
-    2. 
-    """
-    time_cols = ["date", "hour", "minute"]
-    screen_df = spark.read.option("header", True).csv(f"{DATA_FOLDER}/{user_id}_screen.csv")
-    app_notifications_df = spark.read.option("header", True).csv(f"{DATA_FOLDER}/{user_id}_applications_notifications.csv")
-    notification_screen_on = screen_df.filter(F.col("screen_status") == 1).join(app_notifications_df, time_cols)
-    notification_screen_on.show()
-
 """
 Referenced from StudentLife paper: https://dl.acm.org/doi/abs/10.1145/2632048.2632054
 1. High-level overview of day of the week vs time of the day using heatmap
@@ -1011,9 +1047,8 @@ def daily_routine(user_id):
         .withColumnRenamed("physical_datetime", "datetime").drop("light_datetime", "noise_datetime")\
         .dropDuplicates().sort("datetime")
     day_contexts = day_contexts.withColumn("prev_activity", F.lag(F.col("activity_type")).over(time_window))\
-        .withColumn("prev_light", F.lag(F.col("average_lux_minute")).over(time_window))\
-        .withColumn("prev_decibels", F.lag(F.col("average_decibels_minute")).over(time_window))\
-        .withColumn("prev_decibel_outlier", F.lag(F.col("potential_outlier")).over(time_window))\
+        .withColumn("prev_light", F.lag(F.col("mean_light_lux")).over(time_window))\
+        .withColumn("prev_decibels", F.lag(F.col("min_decibels")).over(time_window))\
         .drop(*time_cols)
     # Remove rows with null previous values (1st row)
     day_contexts = day_contexts.dropna(subset=[col for col in day_contexts.columns if "prev_" in col]).sort("datetime")
@@ -1036,7 +1071,6 @@ def daily_routine(user_id):
                                 .withColumn("WiFi_devices", F.when(F.col("WiFi_devices") == "", F.col("temp_WiFi_devices")).otherwise(F.col("WiFi_devices")))\
                                 .drop("temp_WiFi_devices").dropDuplicates().sort("location_datetime")\
                                 .fillna("", subset=["WiFi_devices"])
-    # day_locations.write.csv(f"{cur_day}_locations.csv", header=True)
     
     # Contexts during location transition: inter cluster travel
     cluster_transitions = day_locations.filter((F.col("prev_cluster") != F.col("cluster_id")) | (F.col("prev_cluster").isNull()))
@@ -1052,13 +1086,11 @@ def daily_routine(user_id):
     significant_light_transition = 50
     significant_noise_transition = 10
     day_contexts = day_contexts.withColumn("any_transition",\
-                                           F.when((F.abs(F.col("average_lux_minute") - F.col("prev_light")) >= significant_light_transition) |\
-                                                  (F.abs(F.col("average_decibels_minute") - F.col("prev_decibels")) >= significant_noise_transition) |\
+                                           F.when((F.abs(F.col("mean_light_lux") - F.col("prev_light")) >= significant_light_transition) |\
+                                                  (F.abs(F.col("min_decibels") - F.col("prev_decibels")) >= significant_noise_transition) |\
                                                     (F.col("activity_type") != F.col("prev_activity")), True).otherwise(False))
     context_transitions = day_contexts.filter((F.col("any_transition") == True) & (F.col("activity_type") != 4) & (F.col("prev_activity") != 4))\
         .sort("datetime")
-    
-    # day_contexts.write.csv(f"{cur_day}_contexts.csv", header=True)
 
     # Context analysis
     app_usage = process_application_usage_data(user_id)
@@ -1100,8 +1132,9 @@ def daily_routine(user_id):
     cluster_productivity_df = cluster_productivity_df.union(cluster_productivity)
 
     # Construct a dataframe for the current day to be exported to CSV file
-    cluster_contexts_df.coalesce(1).write.csv(f"{cur_day}_cluster_contexts.csv", header=True)
-    cluster_productivity_df.coalesce(1).write.csv(f"{cur_day}_cluster_productivity.csv", header=True)
+    cluster_contexts_df.coalesce(1).write.csv(f"{user_id}_{cur_day}_cluster_contexts.csv", header=True)
+    cluster_productivity_df.coalesce(1).write.csv(f"{user_id}_{cur_day}_cluster_productivity.csv", header=True)
+    return cluster_contexts_df
 
 def context_analysis(time_based_contexts, event_based_productivity):
     """
@@ -1155,7 +1188,7 @@ def map_overview_estimated_sleep_duration_to_sleep_ema(user_id, esm_ids):
     Maps estimated sleep duration to self-reported sleep duration and sleep quality rating.
     Plots vertical bars showing estimated sleep duration colored based on quality rating and overlayed with reported sleep duration.
     """
-    esm_df = spark.read.option("header", True).csv(f"{DATA_FOLDER}/{user_id}_esms_dummy.csv")\
+    esm_df = spark.read.option("header", True).csv(f"{DATA_FOLDER}/{user_id}_esms.csv")\
         .withColumn("esm_id", udf_extract_esm_id("esm_json"))\
         .filter(F.col("esm_id").isin(esm_ids))\
         .groupBy("date").pivot("esm_id").agg(F.first("esm_user_answer"))\
@@ -1173,7 +1206,7 @@ def map_overview_estimated_sleep_duration_to_sleep_ema(user_id, esm_ids):
         .join(sleep_df, ["date", "end_datetime"])
     
     # Map estimated sleep duration to self-reported sleep duration
-    combined_sleep_df = wake_df.join(esm_df, "date")
+    combined_sleep_df = wake_df.join(esm_df, "date", "left")
     datetime_cols = ["start_datetime", "end_datetime", "reported_sleep_time", "reported_wake_time"]
     combined_sleep_df = combined_sleep_df.withColumn("start_datetime", F.col("start_datetime")-timedelta(hours=2))\
         .withColumn("end_datetime", F.col("end_datetime")-timedelta(hours=2))
@@ -1181,7 +1214,7 @@ def map_overview_estimated_sleep_duration_to_sleep_ema(user_id, esm_ids):
         combined_sleep_df = combined_sleep_df.withColumn(col, udf_hours_relative_to_midnight(F.col(col)))
     combined_sleep_df = combined_sleep_df.select(*["date", "sleep_quality_rating"] + datetime_cols).sort("date").toPandas()
 
-    _, ax = plt.subplots(figsize=(12, 8))
+    _, ax = plt.subplots(figsize=(10, 6))
     cmap = plt.get_cmap('Blues')
     norm = mcolors.Normalize(vmin=1, vmax=5)
 
@@ -1227,7 +1260,7 @@ def map_overview_estimated_sleep_duration_to_sleep_ema(user_id, esm_ids):
     plt.gca().invert_yaxis()
 
     # Title and legend
-    ax.set_title('Sleep Duration and Quality Rating by Day of Week')
+    ax.set_title('Sleep Duration and Quality Rating Across A Week')
     legend_elements = [plt.Line2D([0], [0], color="red", lw=2, label="Self-reported sleep duration")]
     legend_elements.append(plt.Line2D([], [], color="none", label=""))
     legend_elements.append(plt.Line2D([], [], color="none", label="Sleep quality rating"))
@@ -1235,9 +1268,130 @@ def map_overview_estimated_sleep_duration_to_sleep_ema(user_id, esm_ids):
     legend_elements.append(mpatches.Patch(facecolor="grey", edgecolor="black", label="No rating"))
     for index, rating in enumerate(SLEEP_QUALITY_RATINGS):
         legend_elements.append(mpatches.Patch(facecolor=cmap(norm(index+1)), edgecolor="black", label=rating))
-    ax.legend(handles=legend_elements)
+
+    # Shrink current axis by 20%
+    box = ax.get_position()
+    ax.set_position([box.x0, box.y0, box.width * 0.8, box.height])
+    ax.legend(handles=legend_elements, loc='center left', bbox_to_anchor=(1, 0.5))
 
     plt.show()
+
+
+def visualize_daytime_contexts(user_id):
+    """
+    Plots day-level distribution of location
+    Combines all information related to an individual's daytime productivity.
+
+    NOTE Assumptions:
+    1. Wake time as the minimum "end_datetime" of estimated sleep duration for each day
+    2. The most frequently seen cluster at wake time as primary location
+
+    TODO: Map daily routine to mood, productivity or sleep rating
+
+    Group information into hourly or epoch of the day
+    1. Range of activity involved during the day
+    2. Light environment
+    
+    Other information:
+    1. Map light with noise information - sleep, work vs outdoor environment
+    2. People/device around - Bluetooth
+    """
+    coordinate_cols = ["double_latitude", "double_longitude"]
+    time_cols = ["date", "hour", "minute"]
+    time_window = Window.partitionBy("date")\
+        .orderBy("hour", "minute")
+
+    # Sleep estimation
+    sleep_df = estimate_sleep(user_id)\
+        .withColumn("date", udf_get_date_from_datetime("end_datetime"))
+    cur_day = np.array(sleep_df.select("date").distinct().sort("date").collect()).flatten()[0]
+
+    # NOTE: Filter data for the particular day
+    physical_mobility = process_activity_data(user_id).filter(F.col("date") == cur_day)\
+        .withColumn("datetime", udf_generate_datetime(F.col("date"), F.col("hour"), F.col("minute")))
+    ambient_light = process_light_data(user_id).filter(F.col("date") == cur_day)\
+        .withColumn("datetime", udf_generate_datetime(F.col("date"), F.col("hour"), F.col("minute")))   
+    ambient_noise = process_noise_data(user_id).filter(F.col("date") == cur_day)\
+        .withColumn("datetime", udf_generate_datetime(F.col("date"), F.col("hour"), F.col("minute")))
+    app_usage = process_application_usage_data(user_id)\
+        .withColumn("datetime", udf_datetime_from_timestamp("usage_timestamp"))\
+        .withColumn("date", udf_get_date_from_datetime("datetime"))\
+        .filter(F.col("date") == cur_day)
+    for col in app_usage.columns:
+        if "timestamp" in col:
+            app_usage = app_usage.withColumn(col, F.col(col).cast(FloatType()))
+    locations = complement_location_data(user_id).filter(F.col("date") == cur_day)\
+        .withColumn("hour", F.col("hour").cast(IntegerType()))\
+        .withColumn("minute", F.col("minute").cast(IntegerType()))\
+        .withColumn("location_datetime", udf_generate_datetime(F.col("date"), F.col("hour"), F.col("minute")))
+    
+
+    day_locations = locations.groupBy(*[col for col in locations.columns if col != "ssid"])\
+        .agg(F.concat_ws(", ", F.collect_set("ssid")).alias("WiFi_devices"))\
+        .dropDuplicates().sort("location_datetime")
+    day_locations = day_locations.withColumn("prev_cluster", F.lag(F.col("cluster_id")).over(time_window))\
+        .withColumn("prev_location_datetime", F.lag(F.col("location_datetime")).over(time_window))\
+        .drop(*time_cols).sort("location_datetime")
+    coordinates_WiFi_devices = day_locations.select(*coordinate_cols + ["WiFi_devices"]).distinct().dropna()\
+        .filter(F.col("WiFi_devices") != "")
+    day_locations = day_locations.join(coordinates_WiFi_devices.withColumnRenamed("WiFi_devices", "temp_WiFi_devices"),\
+                                       coordinate_cols, "left")\
+                                .withColumn("WiFi_devices", F.when(F.col("WiFi_devices") == "", F.col("temp_WiFi_devices")).otherwise(F.col("WiFi_devices")))\
+                                .drop("temp_WiFi_devices").dropDuplicates().sort("location_datetime")\
+                                .fillna("", subset=["WiFi_devices"])
+    
+    # Location transition: inter cluster travel
+    cluster_transitions = day_locations.filter((F.col("prev_cluster") != F.col("cluster_id")) | (F.col("prev_cluster").isNull()))
+    cluster_transitions.show()
+
+    # NOTE: (N+1) cluster analysis will be involved for N cluster transition points
+    context_dfs = [physical_mobility, ambient_light, ambient_noise]
+    cluster_context_dfs = [None for _ in range(len(context_dfs))]
+    cluster_productivity_df = None
+    # First row will always be the first filtered row for the day of interest
+    location_transition_datetimes = np.array(cluster_transitions.select("location_datetime").collect()).flatten()[1:]
+    location_clusters = np.array(cluster_transitions.select("cluster_id").collect()).flatten()
+    for cluster_index, location_datetime in enumerate(location_transition_datetimes):
+        if cluster_index == 0:
+            for context_index, context_df in enumerate(context_dfs):
+                cluster_context = context_df.filter(F.col("datetime") < location_datetime)\
+                    .withColumn("cluster_id", F.lit(int(location_clusters[cluster_index])))
+                cluster_context_dfs[context_index] = cluster_context
+            cluster_productivity_df = app_usage.filter(udf_datetime_from_timestamp(F.col("usage_timestamp")) < location_datetime)\
+                .withColumn("cluster_id", F.lit(int(location_clusters[cluster_index])))
+        else:
+            for context_index, context_df in enumerate(context_dfs):
+                cluster_context = context_df.filter((F.col("datetime") >= location_transition_datetimes[cluster_index-1]) & (F.col("datetime") < location_datetime))\
+                    .withColumn("cluster_id", F.lit(int(location_clusters[cluster_index])))
+                cluster_context_dfs[context_index] = cluster_context_dfs[context_index].union(cluster_context)
+            cluster_productivity = app_usage.filter((udf_datetime_from_timestamp(F.col("usage_timestamp")) >= location_transition_datetimes[cluster_index-1]) &\
+                                                    (udf_datetime_from_timestamp(F.col("usage_timestamp")) < location_datetime))
+            cluster_productivity_df = cluster_productivity_df.union(cluster_productivity.withColumn("cluster_id", F.lit(int(location_clusters[cluster_index]))))
+
+    # Include the last cluster context after the last transition point
+    for context_index, context_df in enumerate(context_dfs):
+        cluster_context = context_df.filter(F.col("datetime") >= location_transition_datetimes[-1])\
+            .withColumn("cluster_id", F.lit(int(location_clusters[-1])))
+        cluster_context_dfs[context_index] = cluster_context_dfs[context_index].union(cluster_context)
+    cluster_productivity = app_usage.filter(udf_datetime_from_timestamp(F.col("usage_timestamp")) >= location_transition_datetimes[-1])
+    cluster_productivity_df = cluster_productivity_df.union(cluster_productivity.withColumn("cluster_id", F.lit(int(location_clusters[-1]))))
+    
+
+    # # Context transitions
+    # # Duration and contexts in each cluster
+    # significant_light_transition = 50
+    # significant_noise_transition = 10
+    # day_contexts = day_contexts.withColumn("any_transition",\
+    #                                        F.when((F.abs(F.col("mean_light_lux") - F.col("prev_light")) >= significant_light_transition) |\
+    #                                               (F.abs(F.col("min_decibels") - F.col("prev_decibels")) >= significant_noise_transition) |\
+    #                                                 (F.col("activity_type") != F.col("prev_activity")), True).otherwise(False))
+    # context_transitions = day_contexts.filter((F.col("any_transition") == True) & (F.col("activity_type") != 4) & (F.col("prev_activity") != 4))\
+    #     .sort("datetime")
+    
+    # day_contexts.write.csv(f"{user_id}_{cur_day}_contexts.csv", header=True)
+
+    # # Context analysis
+
 
 
 if __name__ == "__main__":
@@ -1289,7 +1443,7 @@ if __name__ == "__main__":
     udf_hours_relative_to_midnight = F.udf(time_to_midnight_hours, FloatType())
 
     # user_identifier = "pixel3"
-    user_identifier = "S2"
+    user_identifier = "S3"
 
     # -- NOTE: Only execute this block when db connection is required --
     # with open("database_config.json", 'r') as file:
@@ -1330,10 +1484,10 @@ if __name__ == "__main__":
     # sleep_df = estimate_sleep(user_identifier)
     # location_df = process_location_data(user_identifier)
     # cluster_df = cluster_locations(user_identifier, location_df, "double_latitude", "double_longitude")
-    # complement_location_data(user_identifier)
+    complement_location_data(user_identifier)
+    # map_overview_estimated_sleep_duration_to_sleep_ema(user_identifier, [3, 4, 1])
     # daily_routine(user_identifier)
-    map_overview_estimated_sleep_duration_to_sleep_ema(user_identifier, [3, 4, 1])
+    # visualize_daytime_contexts(user_identifier)
     # -- End of block
 
     # ambient_light(user_identifier)
-    # phone_productivity(user_identifier) 
