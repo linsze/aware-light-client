@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:orientation="vertical"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:paddingHorizontal="10dp"
+    android:paddingVertical="15dp"
+    android:background="@color/sectionBackgroundColor">
+
+    <TextView
+        android:id="@+id/esm_title"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingBottom="5dp"
+        android:textStyle="bold"
+        android:textSize="16dp"
+        android:textAppearance="@style/TextAppearance.MaterialComponents.Body1"/>
+
+    <com.jjoe64.graphview.GraphView
+        android:layout_width="match_parent"
+        android:layout_height="250dp"
+        android:id="@+id/esm_graph" />
+
+</LinearLayout>
