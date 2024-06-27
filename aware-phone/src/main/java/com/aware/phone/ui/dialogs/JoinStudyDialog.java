@@ -96,7 +96,7 @@ public class JoinStudyDialog extends DialogFragment {
             input_password = strings[1];
 
             try {
-                studyConfig = StudyUtils.getStudyConfig(url);
+                studyConfig = StudyUtils.getStudyConfig(url, "");
                 JoinStudyDialog.this.dismiss();
 
                 if (studyConfig == null){

@@ -32,7 +32,7 @@
             android:layout_height="wrap_content"
             android:layout_width="wrap_content"
             android:layout_marginTop="20dp"
-            android:text="Config URL:"
+            android:text="Configuration URL:"
             android:textAppearance="@style/TextAppearance.AppCompat.Subhead"
             />
         <!--    <TextView-->
@@ -54,7 +54,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="20dp"
-            android:text="Participant identifier:"
+            android:text="Participant ID:"
             android:textAppearance="@style/TextAppearance.AppCompat.Subhead" />
         <!--    <TextView-->
         <!--        android:id="@+id/onboarding_heading"-->

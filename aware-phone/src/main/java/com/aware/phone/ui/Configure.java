@@ -140,7 +140,7 @@ public class Configure extends Aware_Activity {
         joinBtn.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
-                new ValidateURL().execute(etStudyConfigUrl.getText().toString(), "");
+                new ValidateURL().execute(etStudyConfigUrl.getText().toString(), participant_label.getText().toString(), "");
             }
         });
     }
@@ -255,6 +255,7 @@ public class Configure extends Aware_Activity {
         private ProgressDialog mLoader;
         private String url;
         private JSONObject studyConfig;
+        private String userId;
         private String password;
         private Boolean isValidPassword = false;
         private Boolean isValidURL = false;
@@ -273,10 +274,11 @@ public class Configure extends Aware_Activity {
             Log.i(Aware.TAG, "Retrieving study with URL " + url);
 
             url = strings[0];
-            password = strings[1];
+            userId = strings[1];
+            password = strings[2];
             try {
                 // 1 - Retrieve configuration from URL
-                studyConfig = StudyUtils.getStudyConfig(url);
+                studyConfig = StudyUtils.getStudyConfig(url, userId);
                 if (studyConfig != null){
                     isValidURL = true;
                 } else {

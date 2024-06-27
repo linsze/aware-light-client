@@ -303,8 +303,6 @@ public class StudyUtils extends IntentService {
         JSONArray plugins = new JSONArray();
         JSONArray sensors = new JSONArray();
         JSONArray schedulers = new JSONArray();
-        JSONArray esm_schedules = new JSONArray();
-        JSONArray questions = new JSONArray();
 
         for (int i = 0; i < configs.length(); i++) {
             try {
@@ -319,8 +317,13 @@ public class StudyUtils extends IntentService {
                     schedulers = element.getJSONArray("schedulers");
                 }
                 if (element.has("schedules")) {
-                    esm_schedules = element.getJSONArray("schedules");
-                    if (element.has("questions")) questions = element.getJSONArray("questions");
+                    JSONArray esm_schedules = element.getJSONArray("schedules");
+                    JSONArray questions = new JSONArray();
+                    if (element.has("questions")) {
+                        questions = element.getJSONArray("questions");
+
+                    }
+                    setUpEsmSchedule(context, esm_schedules, questions);
                 }
             } catch (JSONException e) {
                 e.printStackTrace();
@@ -367,6 +370,26 @@ public class StudyUtils extends IntentService {
             }
         }
 
+        //Set other schedulers
+        if (schedulers.length() > 0)
+            Scheduler.setSchedules(context, schedulers);
+
+        for (String package_name : active_plugins) {
+            PackageInfo installed = PluginsManager.isInstalled(context, package_name);
+            if (installed == null) {
+                Aware.downloadPlugin(context, package_name, null, false);
+            }
+        }
+
+        // Intent aware = new Intent(context, Aware.class);
+        // context.startService(aware);
+
+        //Send data to server
+        Intent sync = new Intent(Aware.ACTION_AWARE_SYNC_DATA);
+        context.sendBroadcast(sync);
+    }
+
+    private static void setUpEsmSchedule(Context context, JSONArray esm_schedules, JSONArray questions) {
         // Set up ESM question objects
         HashMap<String, JSONObject> esm_questions = new HashMap<>();
         for (int i = 0; i < questions.length(); i++) {
@@ -395,24 +418,6 @@ public class StudyUtils extends IntentService {
                 e.printStackTrace();
             }
         }
-
-        //Set other schedulers
-        if (schedulers.length() > 0)
-            Scheduler.setSchedules(context, schedulers);
-
-        for (String package_name : active_plugins) {
-            PackageInfo installed = PluginsManager.isInstalled(context, package_name);
-            if (installed == null) {
-                Aware.downloadPlugin(context, package_name, null, false);
-            }
-        }
-
-        // Intent aware = new Intent(context, Aware.class);
-        // context.startService(aware);
-
-        //Send data to server
-        Intent sync = new Intent(Aware.ACTION_AWARE_SYNC_DATA);
-        context.sendBroadcast(sync);
     }
 
     /**
@@ -488,6 +493,7 @@ public class StudyUtils extends IntentService {
         if (!Aware.isStudy(context)) return;
 
         String studyUrl = Aware.getSetting(context, Aware_Preferences.WEBSERVICE_SERVER);
+        String user_id = Aware.getSetting(context, Aware_Preferences.DEVICE_LABEL);
         Cursor study = Aware.getStudy(context,
                 Aware.getSetting(context, Aware_Preferences.WEBSERVICE_SERVER));
 
@@ -495,7 +501,7 @@ public class StudyUtils extends IntentService {
             try {
                 JSONObject localConfig = new JSONObject(study.getString(
                         study.getColumnIndex(Aware_Provider.Aware_Studies.STUDY_CONFIG)));
-                JSONObject newConfig = getStudyConfig(studyUrl);
+                JSONObject newConfig = getStudyConfig(studyUrl, user_id);
                 if (!validateStudyConfig(context, newConfig, Aware.getSetting(context, Aware_Preferences.DB_PASSWORD))) {
                     String msg = "Failed to sync study, something is wrong with the config.";
                     Log.e(Aware.TAG, msg);
@@ -563,30 +569,63 @@ public class StudyUtils extends IntentService {
     }
 
     /**
+     * Retrieves Google drive link containing the mapping from userId to respective configuration files.
+     * @param userId
+     * @return Link to custom configuration file (Google drive link)
+     */
+    private static String retrieveStudyUrlFromID(String universalUrl, String userId) throws JSONException {
+        String patternStr = universalUrl.contains("drive.google.com/file") ?
+                "(?<=\\/d\\/).*(?=\\/)" : "(?<=id=).*";
+        Pattern pattern = Pattern.compile(patternStr);
+        Matcher matcher = pattern.matcher(universalUrl);
+        if (matcher.find()) {
+            String fileId = matcher.group(0);
+            universalUrl = "https://drive.google.com/uc?export=download&id=" + fileId;
+        }
+        try {
+            OkHttpClient client = new OkHttpClient();
+            Request request = new Request.Builder().url(universalUrl).build();
+            Response response = client.newCall(request).execute();
+            String responseStr = response.body().string();
+            JSONObject responseJson = new JSONObject(responseStr);
+            if (responseJson.has(userId)) {
+                return responseJson.getString(userId);
+            }
+        } catch (IllegalArgumentException | IOException e) {
+            return "";
+        }
+        return "";
+    }
+
+    /**
      * Retrieves a study config from a file hosted online.
      *
      * @param studyUrl direct download link to the file or a link to the shared file (via Google
      *                 drive or Dropbox)
      * @return JSONObject representing the study config
      */
-    public static JSONObject getStudyConfig(String studyUrl) throws JSONException {
+    public static JSONObject getStudyConfig(String studyUrl, String userId) throws JSONException {
+        String personalizedUrl = retrieveStudyUrlFromID(studyUrl, userId);
+        if (personalizedUrl == "") {
+            return null;
+        }
         // Convert shared links from Google drive and Dropbox into direct download URLs
-        if (studyUrl.contains("drive.google.com")) {
-            String patternStr = studyUrl.contains("drive.google.com/file") ?
+        if (personalizedUrl.contains("drive.google.com")) {
+            String patternStr = personalizedUrl.contains("drive.google.com/file") ?
                     "(?<=\\/d\\/).*(?=\\/)" : "(?<=id=).*";
             Pattern pattern = Pattern.compile(patternStr);
-            Matcher matcher = pattern.matcher(studyUrl);
+            Matcher matcher = pattern.matcher(personalizedUrl);
             if (matcher.find()) {
                 String fileId = matcher.group(0);
-                studyUrl = "https://drive.google.com/uc?export=download&id=" + fileId;
+                personalizedUrl = "https://drive.google.com/uc?export=download&id=" + fileId;
             }
-        } else if (studyUrl.contains("www.dropbox.com")) {
-            studyUrl = studyUrl.replace("www.dropbox.com", "dl.dropboxusercontent.com");
+        } else if (personalizedUrl.contains("www.dropbox.com")) {
+            personalizedUrl = personalizedUrl.replace("www.dropbox.com", "dl.dropboxusercontent.com");
         }
 
         try {
             OkHttpClient client = new OkHttpClient();
-            Request request = new Request.Builder().url(studyUrl).build();
+            Request request = new Request.Builder().url(personalizedUrl).build();
             Response response = client.newCall(request).execute();
             String responseStr = response.body().string();
             JSONObject responseJson = new JSONObject(responseStr);
@@ -594,8 +633,6 @@ public class StudyUtils extends IntentService {
         } catch (IllegalArgumentException | IOException e) {
             return null;
         }
-
-
     }
 
     /**
