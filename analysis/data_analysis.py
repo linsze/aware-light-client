@@ -1,7 +1,7 @@
 """
 Author: Lin Sze Khoo
 Created on: 24/01/2024
-Last modified on: 25/06/2024
+Last modified on: 04/07/2024
 """
 import collections
 import json
@@ -632,37 +632,43 @@ def resolve_cluster_id(cluster_ids, current_ts, prev_ts, next_ts, prev_cluster_i
     Resolves discrepancies in cluster IDs at the same time point by obtaining the mode cluster ID.
     If more than one mode cluster IDs are involved, use the cluster ID that co-occur at an adjacent time point.
     """
-    counts = collections.Counter(cluster_ids)
-    max_count = np.max(list(counts.values()))
-    most_frequent_clusters = []
-    for cluster_id, count in counts.items():
-        if count == max_count:
-            most_frequent_clusters.append(cluster_id)
-    most_frequent_clusters = list(set(most_frequent_clusters))
+    most_frequent_clusters = None
+    if len(cluster_ids) > 0:
+        counts = collections.Counter(cluster_ids)
+        max_count = np.max(list(counts.values()))
+        most_frequent_clusters = []
+        for cluster_id, count in counts.items():
+            if count == max_count:
+                most_frequent_clusters.append(cluster_id)
+        most_frequent_clusters = list(set(most_frequent_clusters))
 
-    if len(most_frequent_clusters) > 1:
-        prev_distance = abs(current_ts - prev_ts) if prev_ts is not None else np.inf
-        next_distance = abs(current_ts - next_ts) if next_ts is not None else np.inf
+    if most_frequent_clusters is None or len(most_frequent_clusters) > 1:
+        prev_distance = abs(current_ts - prev_ts) if prev_ts is not None and len(prev_cluster_ids) > 0 else np.inf
+        next_distance = abs(current_ts - next_ts) if next_ts is not None and len(next_cluster_ids) > 0 else np.inf
         adj_clusters = None
 
         if prev_distance < next_distance:
             adj_clusters = prev_cluster_ids
-        else:
+        elif next_distance < prev_distance:
             adj_clusters = next_cluster_ids
         
-        adj_cluster_counts = collections.Counter(adj_clusters)
-        max_adj_count = np.max(list(adj_cluster_counts.values()))
-        most_frequent_adj_clusters = []
-        for cluster_id, count in adj_cluster_counts.items():
-            if count == max_adj_count:
-                most_frequent_adj_clusters.append(cluster_id)
-        most_frequent_adj_clusters = list(set(most_frequent_adj_clusters))
-        # Make sure that the options for adjacent cluster IDs also exist in the current one
-        most_frequent_adj_clusters = [c for c in most_frequent_adj_clusters if c in most_frequent_clusters]
-        if len(most_frequent_adj_clusters) > 0:
-            most_frequent_clusters = most_frequent_adj_clusters
+        if adj_clusters is not None:
+            adj_cluster_counts = collections.Counter(adj_clusters)
+            max_adj_count = np.max(list(adj_cluster_counts.values()))
+            most_frequent_adj_clusters = []
+            for cluster_id, count in adj_cluster_counts.items():
+                if count == max_adj_count:
+                    most_frequent_adj_clusters.append(cluster_id)
+            most_frequent_adj_clusters = list(set(most_frequent_adj_clusters))
+            # Make sure that the options for adjacent cluster IDs also exist in the current one
+            most_frequent_adj_clusters = [c for c in most_frequent_adj_clusters if most_frequent_clusters is None or c in most_frequent_clusters]
+            if len(most_frequent_adj_clusters) > 0:
+                most_frequent_clusters = most_frequent_adj_clusters
 
-    return most_frequent_clusters[0]
+    if most_frequent_clusters is not None:
+        return most_frequent_clusters[0]
+    else:
+        return None
 
 
 def complement_location_data(user_id):
@@ -685,6 +691,7 @@ def complement_location_data(user_id):
             .withColumn("hour", F.col("hour").cast(IntegerType()))\
             .withColumn("minute", F.col("minute").cast(IntegerType()))
         cluster_df = cluster_locations(user_id, location_df, "double_latitude", "double_longitude")
+
         # Location clusters are derived from all unique coordinates in location_df so there will be no null cluster_id
         location_df = location_df.join(cluster_df, coordinate_cols).dropDuplicates()
         wifi_df = process_wifi_data(user_id)\
@@ -739,8 +746,8 @@ def complement_location_data(user_id):
                 .withColumn("next_cluster_ids", F.lead(F.col("cluster_ids")).over(time_window))\
                 .withColumn("prev_datetime", F.lag(F.col("datetime")).over(time_window))\
                 .withColumn("next_datetime", F.lead(F.col("datetime")).over(time_window))\
-                .withColumn("resolved_cluster_id", resolve_cluster_id(F.col("cluster_ids"), F.col("datetime"), 
-                    F.col("prev_datetime"), F.col("next_datetime"), 
+                .withColumn("resolved_cluster_id", resolve_cluster_id(F.col("cluster_ids"), F.unix_timestamp("datetime"), 
+                    F.unix_timestamp("prev_datetime"), F.unix_timestamp("next_datetime"), 
                     F.col("prev_cluster_ids"), F.col("next_cluster_ids")))\
                 .withColumnRenamed("resolved_cluster_id", "cluster_id")
 
@@ -804,18 +811,23 @@ def estimate_sleep(user_id, with_allowance=True):
     2. Environment may not be completely quiet and/or dark - thresholds are computed based on relative distribution
     3. Remove those with duration shorter than 1 hour
     4. Provide allowance by default with less strict constraints to offer more possible entries.
+
+    NOTE Adjustments and customizations:
+    1. Check consecutive_min (5 mins by default)
+    2. dark_threshold and silent_threshold - estimated from overall distribution by default, updated when self-reported sleep is available
     """
     parquet_filename = f"{DATA_FOLDER}/{user_id}_sleep" + (
         "_optional" if with_allowance else "") + ".parquet"
     if not os.path.exists(parquet_filename):
         time_cols = ["date", "hour", "minute"]
         time_window = Window.partitionBy("date").orderBy(*time_cols)
-        consecutive_min = 5
+        consecutive_min = 10
+        # Retrieves pre-saved contexts
+        with open(f"{user_id}_contexts.json", "r") as f:
+            contexts = json.load(f)
 
         light_df = process_light_data(user_id)
-        brightness_quartiles = light_df.approxQuantile("mean_light_lux", [0.25, 0.50], 0.01)
-        dark_threshold = round(brightness_quartiles[1])
-
+        dark_threshold = contexts["dark_threshold"]
         light_df = light_df.withColumn("datetime", udf_generate_datetime(F.col("date"), F.col("hour"), F.col("minute")))\
             .withColumn("is_dark", F.when(F.col("mean_light_lux") <= dark_threshold, 1).otherwise(0))\
             .withColumn("prev_is_dark", F.lag(F.col("is_dark")).over(time_window))\
@@ -834,11 +846,8 @@ def estimate_sleep(user_id, with_allowance=True):
             .drop("is_dark", "consecutive_duration").sort("start_datetime")
         
 
-        noise_df = process_noise_data(user_id)
-        audio_quartiles = noise_df.approxQuantile("mean_decibels", [0.25, 0.50], 0.01)
-        # silence_threshold = round((audio_quartiles[1]-audio_quartiles[0]) / 2)
-        silence_threshold = round(audio_quartiles[1])
-
+        noise_df = process_noise_data_with_conv_estimate(user_id)
+        silence_threshold = contexts["silent_threshold"]
         noise_df = noise_df.withColumn("datetime", udf_generate_datetime(F.col("date"), F.col("hour"), F.col("minute")))\
             .withColumn("is_quiet", F.when(F.col("mean_decibels") <= silence_threshold, 1).otherwise(0))\
             .withColumn("prev_is_quiet", F.lag(F.col("is_quiet")).over(time_window))\
@@ -977,6 +986,27 @@ def distance(lat1, long1, lat2, long2):
     """
     return hs.haversine((lat1, long1), (lat2, long2), unit=hs.Unit.METERS)
 
+def haversine_distance_with_altitude(coord1, coord2):
+    """
+    Haversine (great circle) distance between two coordinates in the form of (latitude, longitude, altitude)
+    Referred from package haversine computation.
+    """
+    # Convert decimal degrees to radians
+    lat1, long1, lat2, long2 = map(np.radians, [coord1[0], coord1[1], coord2[0], coord2[1]])
+    dlong = long2 - long1
+    dlat = lat2 - lat1
+    dalt = coord2[2] - coord1[2]
+    a = np.sin(dlat/2)**2 + np.cos(lat1) * np.cos(lat2) * np.sin(dlong/2)**2
+    c = 2 * np.arcsin(np.sqrt(a))
+    
+    # Referred from haversine.py
+    # mean earth radius - https://en.wikipedia.org/wiki/Earth_radius#Mean_radius
+    _AVG_EARTH_RADIUS_KM = 6371.0088
+    metres = _AVG_EARTH_RADIUS_KM * c * 1000
+    distance = np.sqrt(metres**2 + dalt**2)
+    
+    return distance
+
 
 @F.udf(StringType())
 def resolve_activity_priority(activity_list):
@@ -1055,8 +1085,8 @@ def extract_daily_features(user_id, date=None):
         .withColumn("datetime", udf_generate_datetime(F.lit(cur_day), F.lit(0), F.lit(0))+timedelta(hours=2))\
         .union(physical_mobility.filter(F.col("date") == cur_day)).sort("datetime")
     # Resolve multiple activity entries at the same time point with custom granularity priorities
-    physical_mobility = physical_mobility.groupBy("datetime").agg(F.collect_list("activity_name").alias("activity_list"))\
-        .withColumn("activity_name", resolve_activity_priority("activity_list"))
+    # physical_mobility = physical_mobility.groupBy("datetime").agg(F.collect_list("activity_name").alias("activity_list"))\
+    #     .withColumn("activity_name", resolve_activity_priority("activity_list"))
     physical_mobility = physical_mobility.withColumn("next_datetime", F.lead(F.col("datetime")).over(time_window))\
         .filter(F.col("next_datetime").isNotNull())\
         .withColumn("duration", F.unix_timestamp("next_datetime") - F.unix_timestamp("datetime"))
@@ -1328,11 +1358,12 @@ def time_to_hours(t):
     minute = t.astimezone(TIMEZONE).minute
     return hour + minute / 60.0
 
-def map_overview_estimated_sleep_duration_to_sleep_ema(user_id, esm_ids):
+
+def retrieve_sleep_ema(user_id, esm_ids=[3, 4, 1]):
     """
-    (Overview - multiple days)
-    Maps estimated sleep duration to self-reported sleep duration and sleep quality rating.
-    Plots vertical bars showing estimated sleep duration colored based on quality rating and overlayed with reported sleep duration.
+    Retrieves EMA responses related to sleep: onset and wake times and sleep quality.
+    Computes sleep duration by considering potential errors in reported times.
+    Reference of error handling: https://www.jmir.org/2017/4/e118/
     """
     esm_df = spark.read.option("header", True).csv(f"{DATA_FOLDER}/{user_id}_esms.csv")\
         .withColumn("esm_id", udf_extract_esm_id("esm_json"))\
@@ -1343,19 +1374,91 @@ def map_overview_estimated_sleep_duration_to_sleep_ema(user_id, esm_ids):
         .withColumnRenamed(str(esm_ids[2]), "sleep_quality_rating").sort("date")\
         .withColumn("reported_sleep_time", F.col("reported_sleep_time").cast(TimestampType()))\
         .withColumn("reported_wake_time", F.col("reported_wake_time").cast(TimestampType()))\
-        .withColumn("sleep_quality_rating", F.col("sleep_quality_rating").cast(IntegerType()))
-
-    sleep_df = estimate_sleep(user_id).withColumn("date", udf_get_date_from_datetime("end_datetime"))
+        .withColumn("sleep_quality_rating", F.col("sleep_quality_rating").cast(IntegerType()))\
+        .filter((F.col("reported_sleep_time").isNotNull()) & F.col("reported_wake_time").isNotNull()).toPandas()
     
-    # Identify daily sleep duration from the earliest sleep wake datetime for each day
+    # Resolves potential errors in reported times
+    date_format = "%Y-%m-%d"
+    datetime_format = f"{date_format} %H:%M"
+
+    sleep_durations = []
+    adjusted_sleep_times = []
+    adjusted_wake_times = []
+    adjusted_sleep_datetimes = []
+    adjusted_wake_datetimes = []
+
+    for _, row in esm_df.iterrows():
+        cur_date = row["date"]
+        cur_datetime = pd.to_datetime(cur_date, format=date_format)
+        day_before = (cur_datetime - pd.DateOffset(days=1)).strftime(date_format)
+        onset_time = row["reported_sleep_time"].hour + row["reported_sleep_time"].minute/60
+        wake_time = row["reported_wake_time"].hour + row["reported_wake_time"].minute/60
+
+        # Falls asleep after midnight
+        if wake_time > onset_time:
+            sleep_duration = wake_time - onset_time
+
+        # Falls asleep before midnight
+        elif (onset_time > wake_time):
+            sleep_duration = (24 - onset_time) + wake_time
+        else:
+            # Assumes that a mistake is made: correct to 12 hrs by default.
+            if wake_time > 12:
+                wake_time = wake_time - 12
+            else:
+                onset_time = onset_time - 12
+            sleep_duration = 12
+        
+        # Assumes that a mistake is made (e.g., 00:00 was input as 12:00)
+        if sleep_duration >= 15:
+            onset_time = onset_time - 12
+            sleep_duration = sleep_duration - 12        
+        if onset_time > wake_time:
+            sleep_date = day_before
+        else:
+            sleep_date = cur_date
+        
+        # Include updated sleep onset and wake datetimes
+        sleep_hour = int(onset_time)
+        sleep_minute = round((onset_time - sleep_hour) * 60)
+        adjusted_sleep_datetimes.append(pd.to_datetime(sleep_date + " " + str(sleep_hour).zfill(2) +\
+        ":" + str(sleep_minute).zfill(2), format=datetime_format))
+
+        wake_hour = int(wake_time)
+        wake_minute = round((wake_time - wake_hour) * 60)
+        adjusted_wake_datetimes.append(pd.to_datetime(cur_date + " " + str(wake_hour).zfill(2) +\
+        ":" + str(wake_minute).zfill(2), format=datetime_format))
+
+        adjusted_sleep_times.append(onset_time)
+        adjusted_wake_times.append(wake_time)
+        sleep_durations.append(sleep_duration)
+
+    esm_df["adjusted_sleep_time"] = adjusted_sleep_times
+    esm_df["adjusted_wake_time"] = adjusted_wake_times
+    esm_df["sleep_duration"] = sleep_durations
+    esm_df["adjusted_sleep_datetime"] = adjusted_sleep_datetimes
+    esm_df["adjusted_wake_datetime"] = adjusted_wake_datetimes
+
+    return esm_df
+
+def map_overview_estimated_sleep_duration_to_sleep_ema(user_id, esm_ids):
+    """
+    (Overview - multiple days)
+    Maps estimated sleep duration to self-reported sleep duration and sleep quality rating.
+    Plots vertical bars showing estimated sleep duration colored based on quality rating and overlayed with reported sleep duration.
+    """
+    esm_df = retrieve_sleep_ema(user_id, esm_ids)
+    sleep_df = estimate_sleep(user_id).withColumn("date", udf_get_date_from_datetime("end_datetime"))\
+        .withColumn("start_datetime", F.col("start_datetime")-timedelta(hours=2))\
+        .withColumn("end_datetime", F.col("end_datetime")-timedelta(hours=2))
+    
+    # Identify daily sleep duration from the longest sleep duration for each day
     wake_df = sleep_df.groupBy("date").agg(F.min("end_datetime").alias("end_datetime"))\
         .join(sleep_df, ["date", "end_datetime"])
     
     # Map estimated sleep duration to self-reported sleep duration
     combined_sleep_df = wake_df.join(esm_df, "date", "left")
     datetime_cols = ["start_datetime", "end_datetime", "reported_sleep_time", "reported_wake_time"]
-    combined_sleep_df = combined_sleep_df.withColumn("start_datetime", F.col("start_datetime")-timedelta(hours=2))\
-        .withColumn("end_datetime", F.col("end_datetime")-timedelta(hours=2))
     for col in datetime_cols:
         combined_sleep_df = combined_sleep_df.withColumn(col, udf_hours_relative_to_midnight(F.col(col)))
     combined_sleep_df = combined_sleep_df.select(*["date", "sleep_quality_rating"] + datetime_cols).sort("date").toPandas()
@@ -1420,7 +1523,6 @@ def map_overview_estimated_sleep_duration_to_sleep_ema(user_id, esm_ids):
     ax.legend(handles=legend_elements, loc='center left', bbox_to_anchor=(1, 0.5))
 
     plt.show()
-
 
 def visualize_day_contexts(user_id, date, activity_df, light_df, noise_df, app_usage_df, location_df):
     """
@@ -1586,6 +1688,189 @@ def visualize_day_contexts(user_id, date, activity_df, light_df, noise_df, app_u
     plt.show()
 
 
+def visualize_reported_sleep_ema(user_id):
+    """
+    Plots vertical bars, each showing reported sleep duration colored based on quality rating.
+    """
+    esm_df = retrieve_sleep_ema(user_id)
+    datetime_cols = ["adjusted_sleep_time", "adjusted_wake_time"]
+    for col in datetime_cols:
+        condition = esm_df[col] > 12
+        esm_df.loc[condition, col] = esm_df.loc[condition, col] - 24
+
+    _, ax = plt.subplots(figsize=(10, 6))
+    cmap = plt.get_cmap('Blues')
+    norm = mcolors.Normalize(vmin=1, vmax=5)
+
+    for i, row in esm_df.iterrows():
+        day_index = i  # x-axis position
+        start = row["adjusted_sleep_time"]
+        end = row["adjusted_wake_time"]
+        
+        # Plot estimated sleep duration and overlay with self-reported start and end datetime
+        if np.isnan(row["sleep_quality_rating"]):
+            bar_color = "grey"
+        else:
+            bar_color = cmap(norm(int(row["sleep_quality_rating"])))
+        ax.bar(day_index, start-end, bottom=end, color=bar_color, edgecolor="black", width=0.5, alpha=0.9)
+        
+    # X-axis as date
+    ax.set_xticks(np.arange(len(esm_df)))
+    ax.set_xticklabels(esm_df["date"], rotation=30)
+
+    # Y-axis
+    min_y = math.floor(esm_df[datetime_cols].min().min())
+    max_y = math.ceil(esm_df[datetime_cols].max().max())
+    ax.set_ylim(min_y, max_y)
+    ax.set_yticks(range(min_y, max_y, 1))
+    y_labels = []
+    for time_diff in range(min_y, max_y, 1):
+        if time_diff < 0:
+            y_labels.append(f"{12 + time_diff} PM")
+        elif time_diff == 0:
+            y_labels.append("12 AM")
+        else:
+            y_labels.append(f"{time_diff} AM")
+    ax.set_yticklabels(y_labels)
+    ax.set_ylabel("Reported sleep duration")
+    ax.yaxis.grid()
+    plt.gca().invert_yaxis()
+
+    # Title and legend
+    ax.set_title('Sleep Duration and Quality Rating Across A Week')
+    legend_elements = [mpatches.Patch(facecolor="grey", edgecolor="black", label="No rating")]
+    for index, rating in enumerate(SLEEP_QUALITY_RATINGS):
+        legend_elements.append(mpatches.Patch(facecolor=cmap(norm(index+1)), edgecolor="black", label=rating))
+
+    # Shrink current axis by 20%
+    box = ax.get_position()
+    ax.set_position([box.x0, box.y0, box.width * 0.8, box.height])
+    ax.legend(handles=legend_elements, loc='center left', bbox_to_anchor=(1, 0.5), title="Sleep quality rating")
+
+    plt.show()
+
+
+def visualize_estimated_sleep_windows_against_reported_sleep(user_id):
+    """
+    Plot all estimated sleep windows with reported sleep duration.
+    """
+    date_format = "%Y-%m-%d"
+    estimated_sleep_df = estimate_sleep(user_id)\
+        .withColumn("start_datetime", F.col("start_datetime")-timedelta(hours=2))\
+        .withColumn("end_datetime", F.col("end_datetime")-timedelta(hours=2)).sort("start_datetime").toPandas()
+    
+    for col in ["start_datetime", "end_datetime"]:
+        estimated_sleep_df[col[:-4]] = pd.to_datetime(estimated_sleep_df[col]).dt.strftime(date_format)
+        estimated_sleep_df[col] = estimated_sleep_df[col].dt.hour + estimated_sleep_df[col].dt.minute/60
+
+    reported_sleep_df = retrieve_sleep_ema(user_id)
+    for col in ["adjusted_sleep_datetime", "adjusted_wake_datetime"]:
+        reported_sleep_df[col[:-4]] = pd.to_datetime(reported_sleep_df[col]).dt.strftime(date_format)
+        reported_sleep_df[col] = reported_sleep_df[col].dt.hour + reported_sleep_df[col].dt.minute/60
+
+    # Get unique dates from reported and estimated sleep
+    unique_dates = pd.concat([reported_sleep_df["adjusted_sleep_date"], reported_sleep_df["adjusted_wake_date"],\
+                              estimated_sleep_df["start_date"], estimated_sleep_df["end_date"]]).unique().tolist()
+    unique_dates.sort()
+
+    _, ax = plt.subplots(figsize=(10, 6))
+    cmap = plt.get_cmap('Blues')
+    norm = mcolors.Normalize(vmin=1, vmax=5)
+
+    # Plot duration of reported sleep
+    for _, row in reported_sleep_df.iterrows():
+        start_date = row["adjusted_sleep_date"]
+        end_date = row["adjusted_wake_date"]
+
+        # Plot estimated sleep duration and overlay with self-reported start and end datetime
+        if np.isnan(row["sleep_quality_rating"]):
+            bar_color = "grey"
+        else:
+            bar_color = cmap(norm(int(row["sleep_quality_rating"])))
+
+        if start_date != end_date:
+            start_day_index = unique_dates.index(start_date)
+            end_day_index = unique_dates.index(end_date)
+
+            ax.bar(start_day_index, row["adjusted_sleep_time"]-24, bottom=24, color=bar_color, edgecolor="black", width=0.5, alpha=0.9)
+            ax.bar(end_day_index, 0-row["adjusted_wake_time"], bottom=row["adjusted_wake_time"], color=bar_color, edgecolor="black", width=0.5, alpha=0.9)
+        else:
+            day_index = unique_dates.index(row["date"])
+            start = row["adjusted_sleep_time"]
+            end = row["adjusted_wake_time"]
+
+            ax.bar(day_index, start-end, bottom=end, color=bar_color, edgecolor="black", width=0.5, alpha=0.9)
+
+    # Plot estimated sleep windows
+    for index, row in estimated_sleep_df.iterrows():
+        start_date = row["start_date"]
+        end_date = row["end_date"]
+
+        if start_date != end_date:
+            start_day_index = unique_dates.index(start_date)
+            end_day_index = unique_dates.index(end_date)
+
+            ax.plot([start_day_index - 0.2, start_day_index + 0.2], [row["start_datetime"], row["start_datetime"]], color="red", markersize=10, linestyle='-', linewidth=2, alpha=0.8)
+            ax.plot([start_day_index - 0.2, start_day_index + 0.2], [24, 24], color="red", markersize=10, linestyle='-', linewidth=2, alpha=0.8)
+            ax.vlines(start_day_index, ymin=row["start_datetime"], ymax=24, color="red", linestyle='-')
+            
+            ax.plot([end_day_index - 0.2, end_day_index + 0.2], [0, 0], color="red", markersize=10, linestyle='-', linewidth=2, alpha=0.8)
+            ax.plot([end_day_index - 0.2, end_day_index + 0.2], [row["end_datetime"], row["end_datetime"]], color="red", markersize=10, linestyle='-', linewidth=2, alpha=0.8)
+            ax.vlines(end_day_index, ymin=0, ymax=row["end_datetime"], color="red", linestyle='-')
+
+        else:
+            day_index = unique_dates.index(end_date)
+            start = row["start_datetime"]
+            end = row["end_datetime"]
+
+            ax.plot([day_index - 0.2, day_index + 0.2], [start, start], color="red", markersize=10, linestyle='-', linewidth=2, alpha=0.8)
+            ax.plot([day_index - 0.2, day_index + 0.2], [end, end], color="red", markersize=10, linestyle='-', linewidth=2, alpha=0.8)
+            ax.vlines(day_index, ymin=start, ymax=end, color="red", linestyle='-')
+                
+    # X-axis as date
+    ax.set_xticks(np.arange(len(unique_dates)))
+    ax.set_xticklabels(unique_dates, rotation=30)
+
+    # Y-axis
+    ax.set_ylim(0, 24)
+    ax.set_yticks(range(0, 24, 2))
+    y_labels = []
+    for time in range(0, 24, 2):
+        if time < 12:
+            y_labels.append(f"{time} AM")
+        else:
+            y_labels.append(f"{time} PM")
+
+    ax.set_yticklabels(y_labels)
+    ax.set_ylabel("Time of the Day")
+    ax.yaxis.grid()
+    plt.gca().invert_yaxis()
+
+    # Title and legend
+    ax.set_title("Estimated Sleep Windows and Reported Sleep Times")
+    legend_elements = []
+    legend_elements = [plt.Line2D([0], [0], color="red", lw=2, label="Estimated sleep window")]
+    legend_elements.append(plt.Line2D([], [], color="none", label=""))
+    legend_elements.append(plt.Line2D([], [], color="none", label="Sleep quality rating"))
+    legend_elements.append(mpatches.Patch(facecolor="grey", edgecolor="black", label="No rating"))
+    for index, rating in enumerate(SLEEP_QUALITY_RATINGS):
+        legend_elements.append(mpatches.Patch(facecolor=cmap(norm(index+1)), edgecolor="black", label=rating))
+
+    # Shrink current axis by 20%
+    box = ax.get_position()
+    ax.set_position([box.x0, box.y0, box.width * 0.9, box.height])
+    ax.legend(handles=legend_elements, loc='center left', bbox_to_anchor=(1, 0.5))
+
+    plt.show()
+
+
+def get_unique_apps(user_id):
+    """
+    
+    """
+    app_usage_df = process_application_usage_data(user_id)
+    print(np.array(app_usage_df.select("application_name").distinct().collect()).flatten())
+
 @F.udf(StringType())
 def label_app_category(user_id, app_name, is_system_app):
     """
@@ -1619,7 +1904,8 @@ def compute_high_level_personal_contexts(user_id):
     7. Threshold of quiet environment based on ambient noise distribution
 
     # NOTE:
-    1. Other system applications are assumed to be in "utilities" category.
+    1. Manually include app categories into contexts.json file after it's being created.
+    2. Other system applications are assumed to be in "utilities" category.
 
     References:
     1. https://www.sciencedirect.com/science/article/pii/004724849290046C - threshold for audio frequency
@@ -1629,8 +1915,12 @@ def compute_high_level_personal_contexts(user_id):
     2. Compute primary contacts
     3. Automate labeling of location clusters and app categories
     """
-    with open(f"{user_id}_contexts.json", "r") as f:
-        contexts = json.load(f)
+    context_file = f"{user_id}_contexts.json"
+    if os.path.exists(context_file):
+        with open(context_file, "w") as f:
+            contexts = json.load(f)
+    else:
+        contexts = {}
 
     light_df = process_light_data(user_id)
     brightness_quartiles = light_df.approxQuantile("mean_light_lux", [0.25, 0.50], 0.01)
@@ -1724,12 +2014,18 @@ def compute_high_level_personal_contexts(user_id):
             pass
         cur_ssids = unique_ssid_clusters.filter(F.col("cluster_id") == int(cluster_row["cluster_id"]))\
             .rdd.map(lambda row: row.asDict()).collect()
-        for col in ["total_WiFi_occurrence", "max_WiFi_occurrence", "min_WiFi_occurrence"]:
-            cur_cluster_dict[col] = cur_ssids[0][col]
-        ssid_occurrences_dict = {}
-        for row in cur_ssids:
-            ssid_occurrences_dict[row["ssid"]] = row["weighted_occurrence"]
-        cur_cluster_dict["ssids"] = ssid_occurrences_dict
+        Wifi_cols = ["total_WiFi_occurrence", "max_WiFi_occurrence", "min_WiFi_occurrence"]
+        if len(cur_ssids) > 0:
+            for col in Wifi_cols:
+                cur_cluster_dict[col] = cur_ssids[0][col]
+            ssid_occurrences_dict = {}
+            for row in cur_ssids:
+                ssid_occurrences_dict[row["ssid"]] = row["weighted_occurrence"]
+            cur_cluster_dict["ssids"] = ssid_occurrences_dict
+        else:
+            for col in Wifi_cols:
+                cur_cluster_dict[col] = 0
+            cur_cluster_dict["ssids"] = {}
         cluster_ssids_dict[int(cluster_row["cluster_id"])] = cur_cluster_dict
     contexts["location_clusters"] = cluster_ssids_dict
 
@@ -1950,7 +2246,7 @@ def features_vs_mood(user_id):
     daily_features = []
     for index, date in enumerate(dates):
         features = extract_daily_features(user_id, date)
-        # features["reported_mood"] = reported_mood[index]
+        features["reported_mood"] = reported_mood[index]
         daily_features.append(features)
     
     features_mood_df = pd.DataFrame.from_dict(daily_features)
@@ -1972,7 +2268,209 @@ def features_vs_mood(user_id):
     corr_df['Correlation'] = corrs
     corr_df['p_value'] = p_values
     print(corr_df)
+    corr_df.to_csv(f"{user_id}_feature_correlations.csv", index=False)
+
+def process_sleep_data(user_id):
+    """
+    Analyzes self-reported sleep data and extracts features during reported sleep duration.
+    Updates thresholds of dark and quiet environments based on available data.
+    """
+    reported_sleep_df = retrieve_sleep_ema(user_id)
+    physical_mobility_df = process_activity_data(user_id)\
+        .withColumn("datetime", udf_generate_datetime(F.col("date"), F.col("hour"), F.col("minute")))\
+        .withColumn("datetime", F.col("datetime")-timedelta(hours=2))\
+        .withColumn("date", udf_get_date_from_datetime(F.col("datetime")))\
+        .withColumn("hour", udf_get_hour_from_datetime(F.col("datetime")))\
+        .withColumn("minute", udf_get_minute_from_datetime(F.col("datetime"))).sort("datetime").toPandas()
+    light_df = process_light_data(user_id)\
+        .withColumn("datetime", udf_generate_datetime(F.col("date"), F.col("hour"), F.col("minute")))\
+        .withColumn("datetime", F.col("datetime")-timedelta(hours=2))\
+        .withColumn("date", udf_get_date_from_datetime(F.col("datetime")))\
+        .withColumn("hour", udf_get_hour_from_datetime(F.col("datetime")))\
+        .withColumn("minute", udf_get_minute_from_datetime(F.col("datetime"))).sort("datetime").toPandas()
+    noise_df = process_noise_data_with_conv_estimate(user_id)\
+        .withColumn("datetime", udf_generate_datetime(F.col("date"), F.col("hour"), F.col("minute")))\
+        .withColumn("datetime", F.col("datetime")-timedelta(hours=2))\
+        .withColumn("date", udf_get_date_from_datetime(F.col("datetime")))\
+        .withColumn("hour", udf_get_hour_from_datetime(F.col("datetime")))\
+        .withColumn("minute", udf_get_minute_from_datetime(F.col("datetime"))).sort("datetime").toPandas()
+    phone_use_df = spark.read.option("header", True).csv(f"{DATA_FOLDER}/{user_id}_plugin_device_usage.csv")\
+        .filter(F.col("double_elapsed_device_on") > 0)\
+        .withColumn("timestamp", F.col("timestamp").cast(FloatType()))\
+        .withColumn("start_datetime", udf_datetime_from_timestamp(F.col("timestamp") - F.col("double_elapsed_device_on")))\
+        .withColumn("end_datetime", udf_datetime_from_timestamp(F.col("timestamp"))).toPandas()
+    app_usage_df = process_application_usage_data(user_id)\
+        .withColumn("start_timestamp", F.col("start_timestamp").cast(FloatType()))\
+        .withColumn("start_datetime", udf_datetime_from_timestamp("start_timestamp")-timedelta(hours=2))\
+        .withColumn("end_timestamp", F.col("end_timestamp").cast(FloatType()))\
+        .withColumn("end_datetime", udf_datetime_from_timestamp("end_timestamp")-timedelta(hours=2))\
+        .withColumn("date", udf_get_date_from_datetime("start_datetime"))\
+        .withColumn("is_system_app", F.col("is_system_app").cast(IntegerType()))\
+        .withColumn("category", label_app_category(F.lit(user_id), F.col("application_name"), F.col("is_system_app")))\
+        .sort("start_timestamp").toPandas()
+    bluetooth_df = process_bluetooth_data(user_id)\
+        .withColumn("timestamp", F.col("timestamp").cast(FloatType()))\
+        .withColumn("bt_datetime", udf_datetime_from_timestamp("timestamp")).sort("bt_datetime").toPandas()
+    location_df = complement_location_data(user_id).sort("datetime").toPandas()
+    location_with_coordinates = location_df[["datetime", "double_latitude", "double_longitude", "double_altitude"]]\
+        .dropna().drop_duplicates().sort_values(by="datetime").reset_index(drop=True)
+    wifi_df = location_df[["datetime", "ssid"]].dropna().drop_duplicates().sort_values(by="datetime").reset_index(drop=True)
+
+    context_dfs = [physical_mobility_df, light_df, noise_df, location_with_coordinates, phone_use_df, app_usage_df, bluetooth_df, wifi_df]
+    context_df_datetime_cols = ["datetime", "datetime", "datetime",  "datetime", "start_datetime", "start_datetime", "bt_datetime", "datetime"]
     
+    daily_sleep_features = []
+    for _, row in reported_sleep_df.iterrows():
+        sleep_time = row["adjusted_sleep_datetime"]
+        wake_time = row["adjusted_wake_datetime"]
+        cur_day_dfs = []
+        for df_index, df in enumerate(context_dfs):
+            dt_col = context_df_datetime_cols[df_index]
+            cur_df = df[(df[dt_col]>=sleep_time) & (df[dt_col]<=wake_time)]
+            if df_index == 4: # Find overlapping duration of active phone usage
+                cur_df = df[(df["start_datetime"]<=wake_time) & (df["end_datetime"]>=sleep_time)]
+            elif df_index <= 3:
+                # Get last entry before the filter window and append to the current df
+                last_entry_before_dt = df[df[dt_col]<sleep_time].iloc[-1:]
+                first_entry_after_dt = df[df[dt_col]>wake_time].iloc[:1]
+                # if len(last_entry_before_dt) > 0:
+                #     last_entry_before_dt.loc[last_entry_before_dt.index[0], dt_col] = sleep_time
+                cur_df = pd.concat([last_entry_before_dt, cur_df, first_entry_after_dt]).sort_values(by=dt_col)
+            cur_day_dfs.append(cur_df)
+        features_during_sleep = extract_features_during_sleep(*[user_id, sleep_time, wake_time] + cur_day_dfs)
+        daily_sleep_features.append(features_during_sleep)
+
+    # Update dark and silent thresholds according to self-reported sleep durations
+    with open(f"{user_id}_contexts.json", "r") as f:
+        contexts = json.load(f)
+    for index, element in enumerate(["luminance", "decibels"]):
+        element_stats = []
+        for stat in ["mean", "std"]:
+            stats = np.array([d[f"{stat}_{element}"] for d in daily_sleep_features])
+            # Use 95th percentile to detect and remove potential outliers
+            Q5 = np.percentile(stats, 5)
+            Q95 = np.percentile(stats, 95)
+            if Q95 != Q5:   # In case all elements are of the same value
+                stats = stats[stats < Q95]
+            element_stats.append(stats)
+        overall_mean, overall_std = (*element_stats,)
+        threshold = math.ceil(np.median(overall_mean) + 2*np.mean(overall_std))
+        if index == 0:
+            contexts["dark_threshold"] = threshold
+        else:
+            contexts["silent_threshold"] = threshold
+    
+    with open(f"{user_id}_contexts.json", "w") as f:
+        json.dump(contexts, f)
+    
+    return daily_sleep_features
+
+def extract_features_during_sleep(user_id, sleep_time, wake_time, activity_df, light_df, noise_df, location_df, phone_usage_df, app_usage_df, bluetooth_df, wifi_df):
+    """
+    Extracts features during self-reported sleep hours.
+    1. Occurrences of non still physical movement
+    2. Min, max, mean, and standard deviation of ambient light and noise during sleep time.
+    3. Phone usage frequency, total duration, and average duration.
+    4. Sleep location and displacement
+    """
+    with open(f"{user_id}_contexts.json", "r") as f:
+        contexts = json.load(f)
+    sleep_time_features = {}
+
+    # Find occurrences where activity is non-stationary
+    if len(activity_df) > 0:
+        activity_df = activity_df.sort_values(by="datetime").reset_index(drop=True)
+        activity_df["next_datetime"] = activity_df["datetime"].shift(-1)
+        activity_df["prev_activity"] = activity_df["activity_name"].shift(1)
+        activity_df["new_group"] = (activity_df["activity_name"] != activity_df["prev_activity"]).astype(int)
+        activity_df["group_id"] = activity_df["new_group"].cumsum()
+
+        grouped_activity_df = activity_df.groupby(["group_id", "activity_name"]).agg(
+            start_datetime=("datetime", "min"),
+            end_datetime=("next_datetime", "max")).reset_index()
+        grouped_activity_df["consecutive_duration"] = (grouped_activity_df["end_datetime"] -\
+                                                    grouped_activity_df["start_datetime"]).dt.total_seconds()
+
+        # Get all occurrences of non-still activity
+        non_still_activity = grouped_activity_df.where(grouped_activity_df["activity_name"] != "still").dropna()
+        if len(non_still_activity) > 0:
+            non_still_occurrences = []
+            for _, row in non_still_activity.iterrows():
+                non_still_occurrences.append(row[["start_datetime", "activity_name", "consecutive_duration"]].to_dict())
+            sleep_time_features["non_still_occurrences"] = non_still_occurrences
+    
+    if "non_still_occurrences" not in sleep_time_features:
+        sleep_time_features["non_still_occurrences"] = []
+
+    # Distribution of ambient light and noise
+    stat_functions = ["min", "max", "mean", "std"]
+    for stat in stat_functions:
+        if len(light_df) > 0:
+            # Min, max, mean, and standard deviation of ambient light
+            sleep_time_features[f"{stat}_luminance"] = float(light_df[f"{stat}_light_lux"].agg(stat))
+        else:
+            sleep_time_features[f"{stat}_luminance"] = 0
+
+        if len(noise_df) > 0:
+            sleep_time_features[f"{stat}_decibels"] = float(noise_df[f"{stat}_decibels"].agg(stat))
+        else:
+            sleep_time_features[f"{stat}_decibels"] = 0
+    
+    # Phone usage
+    phone_usage_duration = 0
+    if len(phone_usage_df) > 0:
+        phone_usage_duration = round(phone_usage_df["double_elapsed_device_on"].astype(float).sum()/1000)
+    sleep_time_features["phone_usage"] = phone_usage_duration
+
+    # Duration of application usage for each category
+    app_usage = []
+    if len(app_usage_df) > 0:
+        category_app_usage = app_usage_df.groupby("category").agg(total_duration=("usage_duration", "sum"),\
+                                                                  apps=("application_name", list)).reset_index()
+        for _, category_usage in category_app_usage.iterrows():
+            app_usage.append(category_usage.to_dict())
+    sleep_time_features["app_usage"] = app_usage
+
+    # Location and displacement during sleep
+    # location_with_coordinates = location_df[["datetime", "double_latitude", "double_longitude", "double_altitude"]]\
+    #     .dropna().drop_duplicates().sort_values(by="datetime").reset_index(drop=True)
+    if len(location_df) > 0:
+        location_df["coordinates"] = list(zip(location_df["double_latitude"],\
+                                                location_df["double_longitude"],\
+                                                location_df["double_altitude"]))
+        location_df["next_datetime"] = location_df["datetime"].shift(-1)
+        location_df["prev_datetime"] = location_df["datetime"].shift(1)
+        location_df["prev_coordinates"] = location_df["coordinates"].shift(1)
+        location_df["new_group"] = (location_df["coordinates"] != location_df["prev_coordinates"]).astype(int)
+        location_df["group_id"] = location_df["new_group"].cumsum()
+
+        # Grouping and aggregating to find consecutive durations
+        grouped_location_df = location_df.groupby(["group_id", "coordinates"]).agg(
+            start_datetime=("datetime", "min"),
+            end_datetime=("next_datetime", "max")
+        ).reset_index().dropna()
+
+        grouped_location_df["consecutive_duration"] = (grouped_location_df["end_datetime"] - grouped_location_df["start_datetime"]).dt.total_seconds()
+        
+        # Sleep location as the coordinates in which the longest duration was spent
+        sleep_location = grouped_location_df.loc[grouped_location_df["consecutive_duration"].idxmax()]
+        sleep_time_features["sleep_location"] = sleep_location["coordinates"]
+
+        # Calculate displacement across location transitions
+        location_disp = location_df[location_df["new_group"] == 1].dropna(subset="prev_coordinates")
+        if len(location_disp) > 0:
+            location_disp["transition_distance"] = location_disp.apply(lambda row: haversine_distance_with_altitude(row["prev_coordinates"], row["coordinates"]), axis=1)
+            disp = []
+            for _, row in location_disp.iterrows():
+                disp.append(row[["datetime", "prev_datetime", "transition_distance"]].to_dict())
+            sleep_time_features["displacements"] = disp
+        else:
+            sleep_time_features["displacements"] = []
+    else:
+        sleep_time_features["sleep_location"] = ()
+    
+    return sleep_time_features
+
 
 if __name__ == "__main__":
     # Spark installation: https://phoenixnap.com/kb/install-spark-on-windows-10
@@ -2038,8 +2536,12 @@ if __name__ == "__main__":
     udf_extract_esm_id = F.udf(lambda x: json.loads(x.replace("'", "\""))["id"], StringType())
     udf_hours_relative_to_midnight = F.udf(time_to_midnight_hours, FloatType())
 
+    # -- Dev user IDs --
     # user_identifier = "pixel3"
-    user_identifier = "S3"
+    # user_identifier = "S3"
+
+    # -- Pilot user IDs --
+    user_identifier = "S07"
 
     # -- NOTE: Only execute this block when db connection is required --
     # with open("database_config.json", 'r') as file:
@@ -2080,6 +2582,7 @@ if __name__ == "__main__":
 
     # Recomputes and saves high-level contextual information (some are hardcoded based on individual's inputs)
     # compute_high_level_personal_contexts(user_identifier)
+    # get_unique_apps(user_identifier)
     # NOTE: Must be executed after computing high-level contexts since conversation estimate depends on the audio thresholds.
     # process_noise_data_with_conv_estimate(user_identifier)
     # -- End of block
@@ -2093,4 +2596,9 @@ if __name__ == "__main__":
     # map_overview_estimated_sleep_duration_to_sleep_ema(user_identifier, [3, 4, 1])
     # extract_daily_features(user_identifier)
     # features_vs_mood(user_identifier)
+
+    # -- Sleep-related --
+    process_sleep_data(user_identifier)
+    # visualize_reported_sleep_ema(user_identifier)
+    # visualize_estimated_sleep_windows_against_reported_sleep(user_identifier)
     # -- End of block
