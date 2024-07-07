@@ -1,7 +1,7 @@
 """
 Author: Lin Sze Khoo
 Created on: 24/01/2024
-Last modified on: 04/07/2024
+Last modified on: 06/07/2024
 """
 import collections
 import json
@@ -406,6 +406,44 @@ def process_screen_data(user_id):
     screen_df = spark.read.parquet(parquet_filename)
     return screen_df
 
+def process_phone_usage_data(user_id):
+    """
+    Two versions of obtaining active phone usage:
+    1. V1: retrieves directly from device usage plugin.
+    2. V2: computes manually from screen status as duration from state 3 (unlocked) to 2 (locked)
+
+    NOTE: V1 may have overlaps in durations since device was on/off due to race condition during data logging.
+    """
+    # V1
+    # phone_usage_df = spark.read.option("header", True).csv(f"{DATA_FOLDER}/{user_id}_plugin_device_usage.csv")
+    # phone_usage_df = phone_usage_df.filter(F.col("double_elapsed_device_on") > 0)\
+    #     .withColumn("timestamp", F.col("timestamp").cast(FloatType()))\
+    #     .withColumn("start_timestamp", F.col("timestamp") - F.col("double_elapsed_device_on"))\
+    #     .withColumnRenamed("timestamp", "end_timestamp")\
+    #     .withColumn("duration", round(F.col("double_elapsed_device_on")/1000))
+
+    # V2: Manual computation through screen states that consider duration between state 3 and state 2
+    # NOTE: This method does not consider that certain apps might still be used in locked state (value 2) 
+
+    # Compute start and end usage event where state 3 indicates the start timepoint and the first subsequent state 2 indicates the end timepoint.
+    screen_df = process_screen_data(user_id)
+    prev_consecutive_time_window = Window.orderBy("timestamp").rowsBetween(Window.unboundedPreceding, -1)
+    phone_usage_df = screen_df.withColumn("start_usage", F.when(F.col("screen_status") == 3, F.col("timestamp")))\
+        .withColumn("end_usage", F.when(F.col("screen_status") == 2, F.col("timestamp")))\
+        .withColumn("last_start_usage", F.last("start_usage", True).over(prev_consecutive_time_window))\
+        .withColumn("last_end_usage", F.last("end_usage", True).over(prev_consecutive_time_window))\
+        .withColumn("start_usage", F.when(F.col("start_usage").isNotNull(), F.col("start_usage"))\
+            .otherwise(F.when((F.col("end_usage").isNotNull()) | (F.col("last_start_usage") > F.col("last_end_usage")), F.col("last_start_usage"))))\
+        .filter(F.col("last_end_usage") <= F.col("start_usage")).sort("timestamp")
+
+    # Aggregate consecutive start events since the last end event without any new end event in between
+    phone_in_use_df = phone_usage_df\
+        .groupBy("last_end_usage").agg(F.min("start_usage").alias("start_timestamp"),\
+                    F.min("end_usage").alias("end_timestamp"))\
+        .withColumn("duration", F.col("end_timestamp")-F.col("start_timestamp"))\
+        .select("start_timestamp", "end_timestamp", "duration").dropDuplicates().dropna().sort("start_timestamp")
+    return phone_in_use_df
+
 def process_application_usage_data(user_id):
     """
     (Event-based)
@@ -419,32 +457,7 @@ def process_application_usage_data(user_id):
     """
     parquet_filename = f"{DATA_FOLDER}/{user_id}_app_usage.parquet"
     if not os.path.exists(parquet_filename):
-        # V1
-        phone_use_df = spark.read.option("header", True).csv(f"{DATA_FOLDER}/{user_id}_plugin_device_usage.csv")
-        phone_in_use_df = phone_use_df.filter(F.col("double_elapsed_device_on") > 0)\
-            .withColumn("timestamp", F.col("timestamp").cast(FloatType()))\
-            .withColumn("start_timestamp", F.col("timestamp") - F.col("double_elapsed_device_on"))\
-            .withColumnRenamed("timestamp", "end_timestamp")
-
-        # V2: Manual computation through screen states that consider duration between state 3 and state 2
-        # NOTE: This method does not consider that certain apps might still be used in locked state (value 2) 
-
-        # # Compute start and end usage event where state 3 indicates the start timepoint and the first subsequent state 2 indicates the end timepoint.
-        # prev_consecutive_time_window = Window.orderBy("timestamp").rowsBetween(Window.unboundedPreceding, -1)
-        # phone_usage_df = screen_df.withColumn("start_usage", F.when(F.col("screen_status") == 3, F.col("timestamp")))\
-        #     .withColumn("end_usage", F.when(F.col("screen_status") == 2, F.col("timestamp")))\
-        #     .withColumn("last_start_usage", F.last("start_usage", True).over(prev_consecutive_time_window))\
-        #     .withColumn("last_end_usage", F.last("end_usage", True).over(prev_consecutive_time_window))\
-        #     .withColumn("start_usage", F.when(F.col("start_usage").isNotNull(), F.col("start_usage"))\
-        #         .otherwise(F.when((F.col("end_usage").isNotNull()) | (F.col("last_start_usage") > F.col("last_end_usage")), F.col("last_start_usage"))))\
-        #     .filter(F.col("last_end_usage") <= F.col("start_usage")).sort("timestamp")
-        
-        # # Aggregate consecutive start events since the last end event without any new end event in between
-        # phone_in_use_df = phone_usage_df\
-        #     .groupBy("last_end_usage").agg(F.min("start_usage").alias("start_timestamp"),\
-        #                 F.min("end_usage").alias("end_timestamp"))\
-        #     .sort("start_timestamp")
-        # -- End of v2 --
+        phone_usage_df = process_phone_usage_data(user_id)
 
         # Might interleave with system process for rendering UI
         substring_regex_pattern = "|".join(["systemui", "launcher", "biometrics"])
@@ -455,9 +468,9 @@ def process_application_usage_data(user_id):
 
         # Obtain intersect of phone screen in use and having applications running in foreground
         time_window = Window.orderBy("timestamp")
-        in_use_app_df = app_usage_df.join(phone_in_use_df, (phone_in_use_df["start_timestamp"] <= app_usage_df["timestamp"]) &\
-                                        (phone_in_use_df["end_timestamp"] >= app_usage_df["timestamp"]))\
-            .select("application_name", "timestamp", "start_timestamp", "end_timestamp", "is_system_app", "double_elapsed_device_on")\
+        in_use_app_df = app_usage_df.join(phone_usage_df, (phone_usage_df["start_timestamp"] <= app_usage_df["timestamp"]) &\
+                                        (phone_usage_df["end_timestamp"] >= app_usage_df["timestamp"]))\
+            .select("application_name", "timestamp", "start_timestamp", "end_timestamp", "is_system_app", "duration")\
             .dropDuplicates()
         in_use_app_df = in_use_app_df.withColumn("next_timestamp", F.lead(F.col("timestamp")).over(time_window))\
             .withColumn("next_timestamp", F.when((F.col("next_timestamp") <= F.col("end_timestamp")), F.col("next_timestamp")).otherwise(F.col("end_timestamp")))\
@@ -829,7 +842,7 @@ def estimate_sleep(user_id, with_allowance=True):
         light_df = process_light_data(user_id)
         dark_threshold = contexts["dark_threshold"]
         light_df = light_df.withColumn("datetime", udf_generate_datetime(F.col("date"), F.col("hour"), F.col("minute")))\
-            .withColumn("is_dark", F.when(F.col("mean_light_lux") <= dark_threshold, 1).otherwise(0))\
+            .withColumn("is_dark", F.when((F.col("min_light_lux") <= dark_threshold) | (F.col("mean_light_lux") <= dark_threshold), 1).otherwise(0))\
             .withColumn("prev_is_dark", F.lag(F.col("is_dark")).over(time_window))\
             .withColumn("next_datetime", F.lead(F.col("datetime")).over(time_window))
         # Consolidate consecutive rows with the same condition by assigning them to the same group until a transition occurs
@@ -879,35 +892,24 @@ def estimate_sleep(user_id, with_allowance=True):
         stationary_df = activity_df.filter((F.col("activity_type") == 3) & (F.col("consecutive_duration") >= consecutive_min*60))\
             .select("start_datetime", "end_datetime").sort("start_datetime")
 
-        # V1: Manual computation through screen states
-        # screen_df = process_screen_data(user_id)
-        # # Only exclude active usage time because phone screen might still be activated by notifications
-        # phone_usage_df = screen_df.withColumn("is_in_use", F.when(F.col("prev_status") == 3, 1).otherwise(0))\
-        #     .withColumn("prev_in_use", F.lag(F.col("is_in_use")).over(time_window))\
-        #     .withColumn("new_group", (F.col("prev_in_use") != F.col("is_in_use")).cast("int"))\
-        #     .withColumn("group_id", F.sum("new_group").over(Window.orderBy("timestamp").rowsBetween(Window.unboundedPreceding, Window.currentRow)))\
-        #     .filter(F.col("prev_timestamp").isNotNull())\
-        #     .groupBy("group_id", "is_in_use")\
-        #     .agg(F.min("prev_timestamp").alias("start_datetime"),\
-        #             F.max("timestamp").alias("end_datetime"))\
-        #     .withColumn("consecutive_duration", F.round((F.col("end_datetime") - F.col("start_datetime"))/1000).cast(IntegerType()))\
-        #     .withColumn("start_datetime", udf_datetime_from_timestamp(F.col("start_datetime")))\
-        #     .withColumn("end_datetime", udf_datetime_from_timestamp(F.col("end_datetime")))\
-        #     .drop("group_id").sort("start_datetime")
-
-        # # With considerations of screen activation caused by notifications or active phone checking
-        # not_in_use_df = phone_usage_df.filter((F.col("is_in_use") == 0) & (F.col("consecutive_duration") > consecutive_min*60))\
-        #     .drop("is_in_use", "consecutive_duration").sort("start_datetime")
+        # V1: Manual computation through active phone usage inferred from screen states
+        # Exclude screen activation caused by notifications or active phone checking
+        phone_use_df = process_phone_usage_data(user_id)
+        not_in_use_df = phone_use_df.withColumn("prev_end_timestamp", F.lag(F.col("end_timestamp")).over(Window.orderBy("start_timestamp")))\
+            .filter(F.col("prev_end_timestamp").isNotNull())\
+            .withColumn("start_datetime", udf_datetime_from_timestamp(F.col("prev_end_timestamp")))\
+            .withColumn("end_datetime", udf_datetime_from_timestamp("start_timestamp"))\
+            .select("start_datetime", "end_datetime")
         
         # V2: Used plugin data directly
-        phone_use_df = spark.read.option("header", True).csv(f"{DATA_FOLDER}/{user_id}_plugin_device_usage.csv")
-        not_in_use_df = phone_use_df.filter(F.col("double_elapsed_device_off") > 0)\
-            .withColumn("timestamp", F.col("timestamp").cast(FloatType()))\
-            .withColumn("start_timestamp", F.col("timestamp") - F.col("double_elapsed_device_off"))\
-            .withColumn("start_datetime", udf_datetime_from_timestamp(F.col("start_timestamp")))\
-            .withColumn("end_datetime", udf_datetime_from_timestamp(F.col("timestamp")))\
-            .withColumn("consecutive_duration", F.round(F.col("double_elapsed_device_off")/1000).cast(IntegerType()))\
-            .select("start_datetime", "end_datetime").sort("start_datetime")
+        # phone_use_df = spark.read.option("header", True).csv(f"{DATA_FOLDER}/{user_id}_plugin_device_usage.csv")
+        # not_in_use_df = phone_use_df.filter(F.col("double_elapsed_device_off") > 0)\
+        #     .withColumn("timestamp", F.col("timestamp").cast(FloatType()))\
+        #     .withColumn("start_timestamp", F.col("timestamp") - F.col("double_elapsed_device_off"))\
+        #     .withColumn("start_datetime", udf_datetime_from_timestamp(F.col("start_timestamp")))\
+        #     .withColumn("end_datetime", udf_datetime_from_timestamp(F.col("timestamp")))\
+        #     .withColumn("consecutive_duration", F.round(F.col("double_elapsed_device_off")/1000).cast(IntegerType()))\
+        #     .select("start_datetime", "end_datetime", "consecutive_duration").sort("start_datetime")
 
         # V1: Find overlapping intervals when all 4 conditions are fulfilled
         if not with_allowance:
@@ -1148,7 +1150,8 @@ def extract_daily_features(user_id, date=None):
         .withColumn("is_system_app", F.col("is_system_app").cast(IntegerType()))\
         .withColumn("category", label_app_category(F.lit(user_id), F.col("application_name"), F.col("is_system_app")))
 
-    total_phone_use_duration = app_usage.agg(F.sum("double_elapsed_device_on")).collect()[0][0]/1000
+    phone_usage = process_phone_usage_data(user_id)
+    total_phone_use_duration = phone_usage.agg(F.sum("duration")).collect()[0][0]
     features["phone_use_duration"] = total_phone_use_duration
 
     app_usage_duration = app_usage.groupBy("category")\
@@ -1749,15 +1752,114 @@ def visualize_reported_sleep_ema(user_id):
 
     plt.show()
 
+def visualize_reported_sleep_ema_with_overlapping_sleep_estimate(user_id):
+    """
+    Plots estimated sleep windows that overlap with reported sleep duration.
+    The y-axis is centred around 12 AM.
+    """
+    estimated_sleep_df = estimate_sleep(user_id)\
+        .withColumn("start_datetime", F.col("start_datetime")-timedelta(hours=2))\
+        .withColumn("end_datetime", F.col("end_datetime")-timedelta(hours=2)).sort("start_datetime").toPandas()
+    reported_sleep_df = retrieve_sleep_ema(user_id).sort_values(by="adjusted_sleep_datetime")
+
+    for col in ["start_datetime", "end_datetime"]:
+        cur_col = f"{col[:-8]}time"
+        estimated_sleep_df[cur_col] = estimated_sleep_df[col].dt.hour + estimated_sleep_df[col].dt.minute/60
+        condition = estimated_sleep_df[cur_col] > 12
+        estimated_sleep_df.loc[condition, cur_col] = estimated_sleep_df.loc[condition, cur_col] - 24
+
+    for col in ["adjusted_sleep_time", "adjusted_wake_time"]:
+        condition = reported_sleep_df[col] > 12
+        reported_sleep_df.loc[condition, col] = reported_sleep_df.loc[condition, col] - 24
+
+    _, ax = plt.subplots(figsize=(10, 6))
+    cmap = plt.get_cmap('Blues')
+    norm = mcolors.Normalize(vmin=1, vmax=5)
+    min_y = np.inf
+    max_y = -np.inf
+
+    # Plot duration of reported sleep
+    for i, row in reported_sleep_df.iterrows():
+        day_index = i
+        sleep_time = row["adjusted_sleep_time"]
+        wake_time = row["adjusted_wake_time"]
+        if sleep_time < min_y:
+            min_y = sleep_time
+        if wake_time > max_y:
+            max_y = wake_time
+
+        # Plot estimated sleep duration and overlay with self-reported start and end datetime
+        if np.isnan(row["sleep_quality_rating"]):
+            bar_color = "grey"
+        else:
+            bar_color = cmap(norm(int(row["sleep_quality_rating"])))
+
+        ax.bar(day_index, sleep_time-wake_time, bottom=wake_time, color=bar_color, edgecolor="black", width=0.5, alpha=0.9)
+
+        overlapping_estimated_window = estimated_sleep_df[(estimated_sleep_df["start_datetime"]<=row["adjusted_wake_datetime"])&\
+                                                          (estimated_sleep_df["end_datetime"]>=row["adjusted_sleep_datetime"])]
+        if len(overlapping_estimated_window) > 0:
+            for _, inner_row in overlapping_estimated_window.iterrows():
+                start = inner_row["start_time"]
+                end = inner_row["end_time"]
+                ax.plot([i - 0.2, i + 0.2], [start, start], color="red", markersize=10, linestyle='-', linewidth=2, alpha=0.8)
+                ax.plot([i - 0.2, i + 0.2], [end, end], color="red", markersize=10, linestyle='-', linewidth=2, alpha=0.8)
+                ax.vlines(i, ymin=start, ymax=end, color="red", linestyle='-')
+                
+                if start < min_y:
+                    min_y = start
+                if end > max_y:
+                    max_y = end
+
+    # X-axis as date
+    ax.set_xticks(np.arange(len(reported_sleep_df["date"])))
+    ax.set_xticklabels(reported_sleep_df["date"], rotation=30)
+
+    # Y-axis
+    min_y = math.floor(min_y)
+    max_y = math.ceil(max_y)
+    ax.set_ylim(min_y, max_y)
+    ax.set_yticks(range(min_y, max_y, 1))
+    y_labels = []
+    for time_diff in range(min_y, max_y, 1):
+        if time_diff < 0:
+            y_labels.append(f"{12 + time_diff} PM")
+        elif time_diff == 0:
+            y_labels.append("12 AM")
+        else:
+            y_labels.append(f"{time_diff} AM")
+    ax.set_yticklabels(y_labels)
+    ax.set_ylabel("Sleep Times")
+    ax.yaxis.grid()
+    plt.gca().invert_yaxis()
+
+    # Title and legend
+    ax.set_title("Reported Sleep Times with Overlapping Estimated Sleep Windows")
+    legend_elements = []
+    legend_elements = [plt.Line2D([0], [0], color="red", lw=2, label="Estimated sleep window")]
+    legend_elements.append(plt.Line2D([], [], color="none", label=""))
+    legend_elements.append(plt.Line2D([], [], color="none", label="Sleep quality rating"))
+    legend_elements.append(mpatches.Patch(facecolor="grey", edgecolor="black", label="No rating"))
+    for index, rating in enumerate(SLEEP_QUALITY_RATINGS):
+        legend_elements.append(mpatches.Patch(facecolor=cmap(norm(index+1)), edgecolor="black", label=rating))
+
+    # Shrink current axis by 20%
+    box = ax.get_position()
+    ax.set_position([box.x0, box.y0, box.width * 0.9, box.height])
+    ax.legend(handles=legend_elements, loc='center left', bbox_to_anchor=(1, 0.5))
+
+    plt.show()
 
 def visualize_estimated_sleep_windows_against_reported_sleep(user_id):
     """
-    Plot all estimated sleep windows with reported sleep duration.
+    Plots all estimated sleep windows with reported sleep duration.
+    The y-axis spans for 24 hours of the day to consider daytime naps.
     """
     date_format = "%Y-%m-%d"
     estimated_sleep_df = estimate_sleep(user_id)\
         .withColumn("start_datetime", F.col("start_datetime")-timedelta(hours=2))\
         .withColumn("end_datetime", F.col("end_datetime")-timedelta(hours=2)).sort("start_datetime").toPandas()
+    # estimated_sleep_df = estimated_sleep_df[estimated_sleep_df["duration (hr)"] > 1.5]
     
     for col in ["start_datetime", "end_datetime"]:
         estimated_sleep_df[col[:-4]] = pd.to_datetime(estimated_sleep_df[col]).dt.strftime(date_format)
@@ -1862,7 +1964,6 @@ def visualize_estimated_sleep_windows_against_reported_sleep(user_id):
     ax.legend(handles=legend_elements, loc='center left', bbox_to_anchor=(1, 0.5))
 
     plt.show()
-
 
 def get_unique_apps(user_id):
     """
@@ -2294,11 +2395,9 @@ def process_sleep_data(user_id):
         .withColumn("date", udf_get_date_from_datetime(F.col("datetime")))\
         .withColumn("hour", udf_get_hour_from_datetime(F.col("datetime")))\
         .withColumn("minute", udf_get_minute_from_datetime(F.col("datetime"))).sort("datetime").toPandas()
-    phone_use_df = spark.read.option("header", True).csv(f"{DATA_FOLDER}/{user_id}_plugin_device_usage.csv")\
-        .filter(F.col("double_elapsed_device_on") > 0)\
-        .withColumn("timestamp", F.col("timestamp").cast(FloatType()))\
-        .withColumn("start_datetime", udf_datetime_from_timestamp(F.col("timestamp") - F.col("double_elapsed_device_on")))\
-        .withColumn("end_datetime", udf_datetime_from_timestamp(F.col("timestamp"))).toPandas()
+    phone_use_df = process_phone_usage_data(user_id)\
+        .withColumn("start_datetime", udf_datetime_from_timestamp(F.col("start_timestamp"))-timedelta(hours=2))\
+        .withColumn("end_datetime", udf_datetime_from_timestamp(F.col("end_timestamp"))-timedelta(hours=2)).toPandas()
     app_usage_df = process_application_usage_data(user_id)\
         .withColumn("start_timestamp", F.col("start_timestamp").cast(FloatType()))\
         .withColumn("start_datetime", udf_datetime_from_timestamp("start_timestamp")-timedelta(hours=2))\
@@ -2341,29 +2440,29 @@ def process_sleep_data(user_id):
         daily_sleep_features.append(features_during_sleep)
 
     # Update dark and silent thresholds according to self-reported sleep durations
-    with open(f"{user_id}_contexts.json", "r") as f:
-        contexts = json.load(f)
-    for index, element in enumerate(["luminance", "decibels"]):
-        element_stats = []
-        for stat in ["mean", "std"]:
-            stats = np.array([d[f"{stat}_{element}"] for d in daily_sleep_features])
-            # Use 95th percentile to detect and remove potential outliers
-            Q5 = np.percentile(stats, 5)
-            Q95 = np.percentile(stats, 95)
-            if Q95 != Q5:   # In case all elements are of the same value
-                stats = stats[stats < Q95]
-            element_stats.append(stats)
-        overall_mean, overall_std = (*element_stats,)
-        threshold = math.ceil(np.median(overall_mean) + 2*np.mean(overall_std))
-        if index == 0:
-            contexts["dark_threshold"] = threshold
-        else:
-            contexts["silent_threshold"] = threshold
+    # with open(f"{user_id}_contexts.json", "r") as f:
+    #     contexts = json.load(f)
+    # for index, element in enumerate(["luminance", "decibels"]):
+    #     element_stats = []
+    #     for stat in ["mean", "std"]:
+    #         stats = np.array([d[f"{stat}_{element}"] for d in daily_sleep_features])
+    #         # Use 95th percentile to detect and remove potential outliers
+    #         Q5 = np.percentile(stats, 5)
+    #         Q95 = np.percentile(stats, 95)
+    #         if Q95 != Q5:   # In case all elements are of the same value
+    #             stats = stats[stats < Q95]
+    #         element_stats.append(stats)
+    #     overall_mean, overall_std = (*element_stats,)
+    #     threshold = math.ceil(np.median(overall_mean) + 2*np.mean(overall_std))
+    #     if index == 0:
+    #         contexts["dark_threshold"] = threshold
+    #     else:
+    #         contexts["silent_threshold"] = threshold
     
-    with open(f"{user_id}_contexts.json", "w") as f:
-        json.dump(contexts, f)
+    # with open(f"{user_id}_contexts.json", "w") as f:
+    #     json.dump(contexts, f)
     
-    return daily_sleep_features
+    return pd.DataFrame(daily_sleep_features)
 
 def extract_features_during_sleep(user_id, sleep_time, wake_time, activity_df, light_df, noise_df, location_df, phone_usage_df, app_usage_df, bluetooth_df, wifi_df):
     """
@@ -2375,7 +2474,7 @@ def extract_features_during_sleep(user_id, sleep_time, wake_time, activity_df, l
     """
     with open(f"{user_id}_contexts.json", "r") as f:
         contexts = json.load(f)
-    sleep_time_features = {}
+    sleep_time_features = {"sleep_time": sleep_time, "wake_time": wake_time}
 
     # Find occurrences where activity is non-stationary
     if len(activity_df) > 0:
@@ -2417,10 +2516,11 @@ def extract_features_during_sleep(user_id, sleep_time, wake_time, activity_df, l
             sleep_time_features[f"{stat}_decibels"] = 0
     
     # Phone usage
-    phone_usage_duration = 0
     if len(phone_usage_df) > 0:
-        phone_usage_duration = round(phone_usage_df["double_elapsed_device_on"].astype(float).sum()/1000)
-    sleep_time_features["phone_usage"] = phone_usage_duration
+        sleep_time_features["phone_usage"] = phone_usage_df[["start_datetime", "end_datetime", "duration"]]\
+            .to_dict(orient='records')
+    else:
+        sleep_time_features["phone_usage"] = []
 
     # Duration of application usage for each category
     app_usage = []
@@ -2471,6 +2571,95 @@ def extract_features_during_sleep(user_id, sleep_time, wake_time, activity_df, l
     
     return sleep_time_features
 
+
+def visualize_events_during_sleep(user_id):
+    """
+    Plots non-stationary activity, location displacements, and active phone usage during reported sleep times.
+    """
+    daily_sleep_features = process_sleep_data(user_id)
+    daily_sleep_features["date"] = pd.to_datetime(daily_sleep_features["wake_time"]).dt.strftime("%Y-%m-%d")
+
+    min_y = np.inf
+    max_y = -np.inf
+    _, ax = plt.subplots(figsize=(12, 8))
+    
+    for day_index, row in daily_sleep_features.iterrows():
+        sleep_time = row["sleep_time"].hour + row["sleep_time"].minute/60
+        sleep_time = sleep_time - 24 if sleep_time > 12 else sleep_time
+        wake_time = row["wake_time"].hour + row["wake_time"].minute/60
+        wake_time = wake_time - 24 if wake_time > 12 else wake_time
+
+        if sleep_time < min_y:
+            min_y = sleep_time
+        if wake_time > max_y:
+            max_y = wake_time
+
+        ax.bar(day_index, sleep_time-wake_time, bottom=wake_time, color="tab:blue", edgecolor="tab:blue", width=0.3, alpha=0.5)
+        for movement in row["non_still_occurrences"]:
+            event_start = movement["start_datetime"].hour + movement["start_datetime"].minute/60
+            event_start = event_start - 24 if event_start > 12 else event_start
+            ax.plot([day_index - 0.25, day_index + 0.25], [event_start, event_start], color="orange", linestyle='-', linewidth=1, alpha=0.8)
+
+        # Only for those transition greater than 1 meter
+        for disp in row["displacements"]:
+            if disp["transition_distance"] > 1:
+                event_start = disp["datetime"].hour + disp["datetime"].minute/60
+                event_start = event_start - 24 if event_start > 12 else event_start
+                ax.plot(day_index, event_start, color="red", marker="x", markersize=6)
+        
+        for phone_usage in row["phone_usage"]:
+            event_start = phone_usage["start_datetime"].hour + phone_usage["start_datetime"].minute/60
+            event_start = event_start - 24 if event_start > 12 else event_start
+            event_end = phone_usage["end_datetime"].hour + phone_usage["end_datetime"].minute/60
+            event_end = event_end - 24 if event_end > 12 else event_end
+            rectangle = mpatches.Rectangle((day_index-0.25, event_start), 0.5, event_end-event_start, linewidth=1, edgecolor="black", facecolor="green", alpha=0.3)
+            ax.add_patch(rectangle)
+            if event_start < min_y:
+                min_y = event_start
+            if event_end > max_y:
+                max_y = event_end
+
+    ax.set_xticks(np.arange(len(daily_sleep_features)))
+    ax.set_xticklabels(daily_sleep_features["date"], rotation=30)
+
+    # Y-axis
+    min_y = math.floor(min_y)
+    max_y = math.ceil(max_y)
+    ax.set_ylim(min_y, max_y)
+    ax.set_yticks(range(min_y, max_y, 1))
+    y_labels = []
+    for time_diff in range(min_y, max_y, 1):
+        if time_diff < 0:
+            y_labels.append(f"{12 + time_diff} PM")
+        elif time_diff == 0:
+            y_labels.append("12 AM")
+        else:
+            y_labels.append(f"{time_diff} AM")
+    ax.set_yticklabels(y_labels)
+    ax.set_ylabel("Reported sleep duration")
+    ax.yaxis.grid()
+    plt.gca().invert_yaxis()
+
+    # Title and legend
+    ax.set_title("Events During Reported Sleep Times")
+    legend_elements = [mpatches.Patch(facecolor="tab:blue", edgecolor="tab:blue", label="Reported sleep duration", alpha=0.6),\
+                       plt.Line2D([0], [0], color="red", marker="x", linestyle=None, lw=0, label="Location displacement"),\
+                       plt.Line2D([0], [0], color="orange", lw=1, label="Non-stationary activity event"),\
+                       mpatches.Patch(facecolor="green", edgecolor="black", label="Active phone usage", alpha=0.3)]
+
+    # Shrink current axis by 20%
+    box = ax.get_position()
+    ax.set_position([box.x0, box.y0, box.width * 0.9, box.height])
+    ax.legend(handles=legend_elements, loc='center left', bbox_to_anchor=(1, 0.5))
+
+    plt.show()
+    
+
+def analyze_features_during_sleep(user_id):
+    """
+    
+    """
+    
 
 if __name__ == "__main__":
     # Spark installation: https://phoenixnap.com/kb/install-spark-on-windows-10
@@ -2598,7 +2787,9 @@ if __name__ == "__main__":
     # features_vs_mood(user_identifier)
 
     # -- Sleep-related --
-    process_sleep_data(user_identifier)
+    # process_sleep_data(user_identifier)
     # visualize_reported_sleep_ema(user_identifier)
+    # visualize_reported_sleep_ema_with_overlapping_sleep_estimate(user_identifier)
     # visualize_estimated_sleep_windows_against_reported_sleep(user_identifier)
+    visualize_features_during_sleep(user_identifier)
     # -- End of block
