@@ -1,7 +1,7 @@
 """
 Author: Lin Sze Khoo
 Created on: 24/01/2024
-Last modified on: 29/07/2024
+Last modified on: 04/08/2024
 """
 import collections
 import json
@@ -795,40 +795,30 @@ def resolve_cluster_id(cluster_ids, current_ts, prev_ts, next_ts, prev_cluster_i
 
 def resolve_cluster_fluctuations(user_id):
     """
-    
+    Resolves and removes short fluctuations (less than 5 mins) in location clusters
+    TODO: Join with initial location df removes certain transitions
     """
     time_window = Window.orderBy("datetime")
-    main_location_df = cross_check_cluster_with_activity_state(user_id)
+    main_location_df = cross_check_cluster_with_activity_state(user_id)\
+        .withColumn("prev_cluster", F.lag(F.col("cluster_id")).over(time_window))
 
-    cluster_transitions = main_location_df.select("datetime", "next_location_datetime", "cluster_id", "next_cluster")\
-        .dropDuplicates().filter(F.col("cluster_id") != F.col("next_cluster"))\
-        .withColumn("prev_cluster", F.lag(F.col("cluster_id")).over(time_window))\
-        .withColumn("next_transition_cluster", F.lead(F.col("next_cluster")).over(time_window))\
-        .withColumn("prev_cluster_end_time", F.lag(F.col("next_location_datetime")).over(time_window))\
-        .withColumn("next_cluster_end_time", F.lead(F.col("next_location_datetime")).over(time_window))\
-        .withColumn("cluster_duration", F.unix_timestamp("next_location_datetime")-F.unix_timestamp("prev_cluster_end_time"))
+    cluster_transitions = main_location_df.select("datetime", "cluster_id", "prev_cluster")\
+        .dropDuplicates().filter(F.col("cluster_id") != F.col("prev_cluster"))\
+        .withColumn("cluster_end_time", F.lead(F.col("datetime")).over(time_window))\
+        .withColumn("cluster_duration", F.unix_timestamp("cluster_end_time")-F.unix_timestamp("datetime"))\
+        .withColumn("next_transition_cluster", F.lead(F.col("cluster_id")).over(time_window))\
+        .withColumn("next_transition_datetime", F.lead(F.col("datetime")).over(time_window))
+    
+    cluster_transitions = cluster_transitions.withColumn("cluster_id", F.when((F.col("cluster_duration")<=300) &\
+        (F.col("prev_cluster") == F.col("next_transition_cluster")), F.col("prev_cluster")).otherwise(F.col("cluster_id")))
+    updated_transitions = cluster_transitions.filter(F.col("cluster_id") == F.col("prev_cluster"))\
+        .select("datetime", "next_transition_datetime", "cluster_id").dropna()
+    for col in updated_transitions.columns:
+        updated_transitions = updated_transitions.withColumnRenamed(col, f"temp_{col}")
 
-    # Look for cluster duration that last for less than 5 minutes
-    cluster_transitions = cluster_transitions.withColumn("is_fluctuation", F.when(F.col("cluster_duration")<300, 1).otherwise(0))\
-        .withColumn("cluster_id", F.when((F.col("is_fluctuation")==1) &\
-        (F.col("prev_cluster") == F.col("next_cluster")), F.col("prev_cluster")).otherwise(F.col("cluster_id")))\
-        .withColumn("next_cluster", F.lead(F.col("cluster_id")).over(time_window))
-    # cluster_transitions.show()
-    # cluster_transitions = cluster_transitions.withColumn("next_is_fluctuation", F.lead(F.col("is_fluctuation")).over(time_window))\
-    #     .withColumn("next_cluster", F.when((F.col("next_is_fluctuation") == 1) &\
-    #         (F.col("next_cluster") == F.col("next_transition_cluster")), F.col("next_cluster"))\
-    #         .otherwise(F.col("next_cluster")))
-    # cluster_transitions.show()
-    # cluster_transitions = cluster_transitions.filter(F.col("cluster_id") != F.col("next_cluster"))\
-    cluster_transitions = cluster_transitions.select("datetime", "next_location_datetime", "cluster_id", "next_cluster")
-    for col in cluster_transitions.columns:
-        cluster_transitions = cluster_transitions.withColumnRenamed(col, f"temp_{col}")
-
-    # Update the initial df based on the changes
-    main_location_df = main_location_df.join(cluster_transitions, ((F.col("datetime") >= F.col("temp_datetime")) &\
-        (F.col("datetime") <= F.col("temp_next_location_datetime"))), "left")\
+    main_location_df = main_location_df.join(updated_transitions, ((F.col("datetime") >= F.col("temp_datetime")) &\
+        (F.col("datetime") < F.col("temp_next_transition_datetime"))))\
         .withColumn("cluster_id", F.coalesce(F.col("temp_cluster_id"), F.col("cluster_id")))\
-        .withColumn("next_cluster", F.coalesce(F.col("temp_next_cluster"), F.col("next_cluster")))\
         .select(*[col for col in main_location_df.columns]).dropDuplicates().sort("datetime")
 
     return main_location_df
@@ -836,7 +826,6 @@ def resolve_cluster_fluctuations(user_id):
 def cross_check_cluster_with_activity_state(user_id):
     """
     Cross-checks cluster changes with activity states
-    TODO: Check fluctuations of cluster for a short duration of time
     """
     parquet_filename = f"{DATA_FOLDER}/{user_id}_adjusted_combined_location.parquet"
     if not os.path.exists(parquet_filename):
@@ -845,8 +834,8 @@ def cross_check_cluster_with_activity_state(user_id):
         
         location_with_cluster_df = main_location_df.select("datetime", "double_latitude", "double_longitude", "cluster_id")\
             .dropDuplicates().withColumnRenamed("datetime", "location_datetime").sort("location_datetime")\
-            .withColumn("next_cluster", F.lead(F.col("cluster_id")).over(time_window))\
-            .withColumn("next_location_datetime", F.lead(F.col("location_datetime")).over(time_window))
+            .withColumn("prev_cluster", F.lag(F.col("cluster_id")).over(time_window))\
+            .withColumn("prev_location_datetime", F.lag(F.col("location_datetime")).over(time_window))
 
         # Segregates into moving vs non-moving (tilting is not considered since it will not cause cluster change)
         activity_df = process_activity_data(user_id)\
@@ -869,54 +858,88 @@ def cross_check_cluster_with_activity_state(user_id):
             .drop("group_id").sort("start_movement_datetime")
         
         # There might be sampling gaps if the duration of a location transition exceeds two hours
-        significant_gap_location_transitions = location_with_cluster_df.filter(((F.col("cluster_id") != F.col("next_cluster"))) &\
-            ((F.unix_timestamp("next_location_datetime")-F.unix_timestamp("location_datetime"))>7200)) 
+        significant_gap_location_transitions = location_with_cluster_df.filter(((F.col("cluster_id") != F.col("prev_cluster"))) &\
+            ((F.unix_timestamp("location_datetime")-F.unix_timestamp("prev_location_datetime"))>7200)) 
         # Cross-check with intersecting duration of continuous non-movement
         intersecting_movement = significant_gap_location_transitions.join(consecutive_movement_df.filter((F.col("is_still") == 1) &\
             (F.col("movement_duration") >= 3600)),\
-            ((F.col("location_datetime") < F.col("end_movement_datetime")) &\
-            (F.col("next_location_datetime") > F.col("start_movement_datetime"))))
-
+            ((F.col("prev_location_datetime") < F.col("end_movement_datetime")) &\
+            (F.col("location_datetime") > F.col("start_movement_datetime"))))
+        
         # Get the longest non-movement duration to update cluster transition datetime
         # 1. If still start time > cluster transition start time: update cluster transition end time earlier to still start time
         # 2. If still start time < cluster transition start time: update cluster transition start time later to still end time
         rank_still_duration_window = Window.partitionBy(*[col for col in significant_gap_location_transitions.columns])\
             .orderBy(F.desc("movement_duration"))
-        adjusted_transitions = intersecting_movement.withColumn("rank", F.row_number().over(rank_still_duration_window))\
-            .filter(F.col("rank") == 1).drop("rank")\
-            .withColumn("adjusted_next_location_datetime", F.when(F.col("start_movement_datetime") > F.col("location_datetime"),\
-                F.col("start_movement_datetime")).otherwise(F.col("next_location_datetime")))\
-            .withColumn("adjusted_location_datetime", F.when(F.col("start_movement_datetime") < F.col("location_datetime"),
-                F.col("end_movement_datetime")).otherwise(F.col("location_datetime")))\
-            .select("adjusted_location_datetime", "adjusted_next_location_datetime", F.col("cluster_id").alias("adjusted_cluster_id"),\
-                F.col("next_cluster").alias("adjusted_next_cluster"))
+        intersecting_movement = intersecting_movement.withColumn("rank", F.row_number().over(rank_still_duration_window))\
+            .filter(F.col("rank") == 1).drop("rank").toPandas()
 
-        # Update the original location df based on updated cluster transitions
-        updated_location_df = location_with_cluster_df.join(adjusted_transitions,\
-            ((F.col("adjusted_location_datetime") <= F.col("location_datetime")) &\
-            (F.col("adjusted_next_location_datetime") >= F.col("location_datetime")) &\
-            (F.col("cluster_id") == F.col("adjusted_cluster_id")) &\
-            (F.col("next_cluster") == F.col("adjusted_next_cluster"))), "left")
-        updated_location_df = updated_location_df.withColumn("location_datetime", F.coalesce("adjusted_location_datetime", "location_datetime"))\
-            .withColumn("next_location_datetime", F.coalesce("adjusted_next_location_datetime", "next_location_datetime"))
+        with open(f"{user_id}/{user_id}_contexts.json", "r") as f:
+            contexts = json.load(f)
 
-        updated_location_df = updated_location_df.drop(*[col for col in updated_location_df.columns if col.startswith("adjusted_")])\
-            .dropDuplicates().withColumnRenamed("location_datetime", "datetime")
-        cols_to_retain = ["datetime", "next_cluster", "next_location_datetime"]
-        for col in updated_location_df.columns:
-            if col not in cols_to_retain:
-                updated_location_df = updated_location_df.withColumnRenamed(col, f"temp_{col}")
-        updated_location_df = updated_location_df.join(main_location_df, "datetime")\
-            .select(*[col for col in main_location_df.columns] + cols_to_retain[1:])\
-            .dropDuplicates().sort("datetime")
+        primary_loc = None
+        location_clusters = contexts["location_clusters"]
+        for key in list(location_clusters.keys()):
+            if location_clusters[key]["is_primary"]:
+                primary_loc = int(key)
         
-    #     updated_location_df.write.parquet(parquet_filename)
-    
+        rows_to_insert = []
+        for _, row in intersecting_movement.iterrows():
+            if row["start_movement_datetime"] > row["prev_location_datetime"]:
+                # Insert a new row before this: the cluster stay might have happened earlier
+                new_row = {"location_datetime": row["start_movement_datetime"],\
+                    "double_latitude": row["double_latitude"],\
+                    "double_longitude": row["double_longitude"],\
+                    "cluster_id": row["cluster_id"]}
+                rows_to_insert.append(new_row)
+            elif row["start_movement_datetime"] < row["prev_location_datetime"]:
+                # Insert a new row after this: the cluster stay might have ended later
+                new_row = {"location_datetime": row["end_movement_datetime"],\
+                    "double_latitude": None,\
+                    "double_longitude": None,\
+                    "cluster_id": row["prev_cluster"]}
+                if (row["end_movement_datetime"] - row["prev_location_datetime"]).total_seconds() > 12*3600:
+                    if primary_loc is not None:
+                        new_row["cluster_id"] = primary_loc
+                rows_to_insert.append(new_row)
+
+        # Union updated transitions and duration into previous cluster transitions
+        time_window = Window.orderBy("location_datetime")
+        for row in rows_to_insert:
+            row["location_datetime"] = row["location_datetime"].strftime("%Y-%m-%d %H:%M:%S")
+        df_to_insert = spark.createDataFrame(rows_to_insert, schema=StructType(
+            [StructField("location_datetime", StringType(), False),\
+            StructField("double_latitude", FloatType(), True),
+            StructField("double_latitude", FloatType(), True),\
+            StructField("cluster_id", IntegerType(), False)])).dropDuplicates()
+        df_to_insert = df_to_insert.withColumn("location_datetime", F.col("location_datetime").cast(TimestampType()))
+        adjusted_transitions = location_with_cluster_df.select(*["location_datetime", "double_latitude", "double_longitude", "cluster_id"])\
+            .union(df_to_insert).sort("location_datetime")\
+            .withColumn("prev_cluster", F.lag(F.col("cluster_id")).over(time_window))\
+            .withColumn("prev_location_datetime", F.lag(F.col("location_datetime")).over(time_window))
+        for col in adjusted_transitions.columns:
+            adjusted_transitions = adjusted_transitions.withColumnRenamed(col, f"temp_{col}")
+
+        # Update the initial df to adjust cluster_id and include new rows to take into account new cluster transitions
+        updated_location_df = main_location_df.join(adjusted_transitions,\
+            (((F.col("datetime") > F.col("temp_prev_location_datetime")) & \
+            (F.col("datetime") < F.col("temp_location_datetime"))) |\
+            (F.col("datetime") == F.col("temp_location_datetime"))), "outer")\
+            .withColumn("datetime", F.coalesce(F.col("datetime"), F.col("temp_location_datetime")))\
+            .withColumn("cluster_id", F.when(F.col("datetime") == F.col("temp_location_datetime"), F.col("temp_cluster_id"))\
+                .otherwise(F.col("temp_prev_cluster")))
+        updated_location_df = updated_location_df.drop(*[col for col in updated_location_df.columns if col.startswith("temp_")])\
+            .dropDuplicates().sort("datetime")\
+            .withColumn("date", udf_get_date_from_datetime(F.col("datetime")))\
+            .withColumn("hour", udf_get_hour_from_datetime(F.col("datetime")))\
+            .withColumn("minute", udf_get_minute_from_datetime(F.col("datetime")))
+
+        updated_location_df.write.parquet(parquet_filename)
+        
     if os.path.exists(parquet_filename):
         location_df = spark.read.parquet(parquet_filename)
         return location_df
     return None
-    # return updated_location_df
 
 def complement_location_data(user_id, adjusted_clusters=True):
     """
@@ -1277,6 +1300,405 @@ def resolve_activity_priority(activity_list):
             priority_activity = act
     return priority_activity
 
+def create_agg_features(user_id, group_by_cols, activity_df, light_df, noise_df, app_usage_df, phone_usage_df, bluetooth_df, location_df):
+    """
+    Extracts functions from input dataframes and aggregates based on columns defined
+    """
+    with open(f"{user_id}/{user_id}_contexts.json", "r") as f:
+        contexts = json.load(f)
+
+    agg_features = {}
+
+    activities = ["still", "in_vehicle", "on_bicycle", "tilting", "walking", "running"]
+    if activity_df.count() > 0:
+        # Total duration and normalized duration (by time spent at the cluster) for each activity state
+        activity_duration = activity_df.groupBy(*group_by_cols + ["activity_name"])\
+            .agg(F.sum("duration").alias("total_activity_duration"))\
+            .sort("total_activity_duration", ascending=False).collect()
+        for row in activity_duration:
+            key = tuple(row[col] for col in group_by_cols)
+            if key not in agg_features:
+                agg_features[key] = {}
+            group_by_dict = agg_features[key]
+            if row["activity_name"] in activities:
+                group_by_dict[f"{row['activity_name']}_duration"] = row["total_activity_duration"]
+
+    # Total phone usage duration
+    if phone_usage_df.count() > 0:
+        total_phone_use_duration = phone_usage_df.groupBy(group_by_cols)\
+            .agg(F.sum("usage_duration").alias("phone_use_duration")).collect()
+        for row in total_phone_use_duration:
+            key = tuple(row[col] for col in group_by_cols)
+            if key not in agg_features:
+                agg_features[key] = {}
+            group_by_dict = agg_features[key]
+            group_by_dict["phone_use_duration"] = row["phone_use_duration"]
+
+    # Total duration of each application category and normalized by time spent at the cluster and unlock duration
+    app_categories = list(contexts["app_categories"].keys()) + ["utilities", "others"]
+    if app_usage_df.count() > 0:
+        app_usage_duration = app_usage_df.groupBy(*group_by_cols + ["category"])\
+            .agg((F.sum("usage_duration")).alias("total_usage_duration"))\
+            .sort("total_usage_duration", ascending=False).collect()
+        for row in app_usage_duration:
+            key = tuple(row[col] for col in group_by_cols)
+            if row["category"] in app_categories:
+                if key not in agg_features:
+                    agg_features[key] = {}
+                group_by_dict = agg_features[key]
+                group_by_dict[f"app_use_duration_{row['category']}"] = row["total_usage_duration"]
+
+                if "phone_use_duration" in group_by_dict:
+                    group_by_dict[f"app_use_normalized_by_phone_use_duration_{row['category']}"] = row["total_usage_duration"]/group_by_dict["phone_use_duration"]
+
+    stat_functions = [F.min, F.max, F.mean, F.stddev]
+    stat_names = ["min", "max", "mean", "std"]
+    if light_df.count() > 0:
+        # Min, max, mean, and standard deviation of ambient light
+        agg_expressions = [stat_functions[index](f"{stat_names[index]}_light_lux").alias(f"{stat_names[index]}_light_lux") for index in range(len(stat_functions))]
+        ambient_light = light_df.groupBy(*group_by_cols).agg(*agg_expressions).collect()
+        for row in ambient_light:
+            key = tuple(row[col] for col in group_by_cols)
+            if key not in agg_features:
+                agg_features[key] = {}
+            group_by_dict = agg_features[key]
+            for stat in stat_names:
+                group_by_dict[f"{stat}_light_lux"] = row[f"{stat}_light_lux"]
+        
+        dark_df = light_df.filter(F.col("is_dark") == 1)
+        if dark_df.count() > 0:
+            dark_duration_df = dark_df.groupBy(*group_by_cols).agg(F.sum("duration").alias("dark_duration")).collect()
+            for row in dark_duration_df:
+                key = tuple(row[col] for col in group_by_cols)
+                group_by_dict = agg_features[key]
+                group_by_dict["dark_duration"] = row["dark_duration"]
+
+    if noise_df.count() > 0:
+        # Min, max, mean, and standard deviation of ambient noise
+        agg_expressions = [stat_functions[index](f"{stat_names[index]}_decibels").alias(f"{stat_names[index]}_decibels") for index in range(len(stat_functions))]
+        ambient_noise = noise_df.groupBy(*group_by_cols).agg(*agg_expressions).collect()
+        for row in ambient_noise:
+            key = tuple(row[col] for col in group_by_cols)
+            if key not in agg_features:
+                agg_features[key] = {}
+            group_by_dict = agg_features[key]
+            for stat in stat_names:
+                group_by_dict[f"{stat}_decibels"] = row[f"{stat}_decibels"]
+        
+        quiet_df = noise_df.filter(F.col("is_quiet") == 1)
+        if quiet_df.count() > 0:
+            quiet_duration_df = quiet_df.groupBy(*group_by_cols).agg(F.sum("duration").alias("silent_duration")).collect()
+            for row in quiet_duration_df:
+                key = tuple(row[col] for col in group_by_cols)
+                group_by_dict = agg_features[key]
+                group_by_dict["silent_duration"] = row["silent_duration"]
+
+    location_time_window = Window().partitionBy(*group_by_cols).orderBy("datetime")
+    location_coordinates = location_df.select(*group_by_cols +\
+        ["datetime", "double_latitude", "double_longitude", "cluster_id"]).distinct()
+    distance_traveled = location_coordinates\
+        .withColumn("next_latitude", F.lead(F.col("double_latitude")).over(location_time_window))\
+        .withColumn("next_longitude", F.lead(F.col("double_longitude")).over(location_time_window))\
+        .dropna().withColumn("distance", distance(F.col("double_latitude"), F.col("double_longitude"),\
+            F.col("next_latitude"), F.col("next_longitude")))
+
+    total_distance = distance_traveled.groupBy(*group_by_cols).agg(F.sum("distance").alias("distance_traveled")).collect()
+    for row in total_distance:
+        key = tuple(row[col] for col in group_by_cols)
+        if key not in agg_features:
+            agg_features[key] = {}
+        group_by_dict = agg_features[key]
+        group_by_dict["distance_traveled"] = row["distance_traveled"]
+
+    # Location variance
+    location_variance = location_coordinates.groupBy(*group_by_cols)\
+        .agg(F.variance("double_latitude").alias("variance_latitude"),\
+             F.variance("double_longitude").alias("variance_longitude"))\
+        .withColumn("log_variance", F.log(F.col("variance_latitude") + F.col("variance_longitude"))).collect()
+    for row in location_variance:
+        key = tuple(row[col] for col in group_by_cols)
+        if key not in agg_features:
+            agg_features[key] = {}
+        group_by_dict = agg_features[key]
+        group_by_dict["location_variance"] = row["log_variance"]
+
+    # Count of unique location entries (could have multiple at the same timestamp due to WiFi devices)
+    unique_location_entries = location_df.select(*group_by_cols + ["datetime", "cluster_id"] +\
+        [col for col in location_df.columns if "double_" in col]).dropDuplicates()
+    unique_location_count = unique_location_entries.groupBy(*group_by_cols)\
+        .agg(F.count("datetime").alias("unique_location_count")).collect()
+    for row in unique_location_count:
+        key = tuple(row[col] for col in group_by_cols)
+        if key not in agg_features:
+            agg_features[key] = {}
+        group_by_dict = agg_features[key]
+        group_by_dict["unique_location_count"] = row["unique_location_count"]
+    
+    # Count of unknown locations
+    unknown_location_count = unique_location_entries.filter(F.col("cluster_id") == -1)\
+        .groupBy(*group_by_cols).agg(F.count("datetime").alias("unknown_location_count")).collect()
+    for row in unknown_location_count:
+        key = tuple(row[col] for col in group_by_cols)
+        group_by_dict = agg_features[key]
+        group_by_dict["unknown_location_count"] = row["unknown_location_count"]
+        if "unique_location_count" in group_by_dict:
+            group_by_dict["unknown_location_count_normalized_by_entries"] = row["unknown_location_count"]/\
+                group_by_dict["unique_location_count"]
+
+    # Time spent in cluster
+    cluster_time_spent = unique_location_entries\
+        .withColumn("next_datetime", F.lead(F.col("datetime")).over(location_time_window)).dropna()\
+        .withColumn("duration", F.unix_timestamp("next_datetime")-F.unix_timestamp("datetime"))\
+        .groupBy(*group_by_cols + ["cluster_id"]).agg(F.sum("duration").alias("stay_duration")).collect()
+    
+    overall_location_cluster_info = contexts["location_clusters"]
+    overall_clusters = list(overall_location_cluster_info.keys())
+
+    cluster_stay = {}
+    for row in cluster_time_spent:
+        key = tuple(row[col] for col in group_by_cols)
+        if key not in cluster_stay:
+            cluster_stay[key] = {}
+        cluster_dict = cluster_stay[key]
+        cluster_dict[f"cluster{row['cluster_id']}_stay_duration"] = row["stay_duration"]
+        # Time spent at primary and secondary clusters
+        if overall_location_cluster_info[str(row["cluster_id"])]["is_primary"]:
+            cluster_dict["time_spent_primary_cluster"] = row["stay_duration"]
+        elif overall_location_cluster_info[str(row["cluster_id"])]["is_secondary"]:
+            cluster_dict["time_spent_secondary_cluster"] = row["stay_duration"]
+    
+    for group_by_key in list(cluster_stay.keys()):
+        if group_by_key not in agg_features:
+            agg_features[key] = {}
+        group_by_dict = agg_features[key]
+        cluster_group_by_dict = cluster_stay[group_by_key]
+        time_at_cluster = []
+        for cluster_key in list(cluster_group_by_dict.keys()):
+            group_by_dict[cluster_key] = cluster_group_by_dict[cluster_key]
+            if "stay_duration" in cluster_key:
+                time_at_cluster.append(cluster_group_by_dict[cluster_key])
+        # Add a small negligible value to avoid log(0) when a specific cluster is not visited
+        probability = np.array(time_at_cluster)/(24*3600) + 1e-10
+        entropy = - np.sum(probability * np.log(probability))
+        normalized_entropy = entropy/math.log(len(overall_clusters))
+        group_by_dict["location_entropy"] = entropy
+        group_by_dict["normalized_location_entropy"] = normalized_entropy
+
+    wifi_df = location_df.filter(F.col("ssid").isNotNull())
+    if wifi_df.count() > 0:
+        # Number of WiFi entries and unique WiFi devices
+        wifi_entry_count = wifi_df.groupBy(*group_by_cols).agg(F.count("ssid").alias("wifi_count")).collect()
+        for row in wifi_entry_count:
+            key = tuple(row[col] for col in group_by_cols)
+            if key not in agg_features:
+                agg_features[key] = {}
+            group_by_dict = agg_features[key]
+            group_by_dict["wifi_count"] = row["wifi_count"]
+        unique_wifi_entry_count = wifi_df.groupBy(*group_by_cols).agg(F.count_distinct("ssid").alias("unique_wifi_count")).collect()
+        for row in unique_wifi_entry_count:
+            key = tuple(row[col] for col in group_by_cols)
+            group_by_dict = agg_features[key]
+            group_by_dict["unique_wifi_count"] = row["unique_wifi_count"]
+
+        # Retrieves primary WiFi devices and their weighted occurrence
+        primary_wifi_devices = [item["ssid"] for item in contexts["primary_wifi_devices"]]
+        primary_wifi_weight = [item["weighted_occurrence"] for item in contexts["primary_wifi_devices"]]
+        primary_wifi_weighted_by_overall_occurrence = {}
+        
+        primary_wifi_df = wifi_df.filter(F.col("ssid").isin(*primary_wifi_devices))
+        if primary_wifi_df.count() > 0:
+            # Occurrence of each WiFi device weighted by total WiFi entries in the current cluster
+            primary_wifi_occurrence = primary_wifi_df.groupBy(*group_by_cols+["ssid"])\
+                .agg(F.count("datetime").alias("device_occurrence"))\
+                .sort("device_occurrence", ascending=False).collect()
+            # Compute overall weighted occurrence of primary WiFi devices
+            for row in primary_wifi_occurrence:
+                key = tuple(row[col] for col in group_by_cols)
+                list_index = primary_wifi_devices.index(row["ssid"])
+                if key not in primary_wifi_weighted_by_overall_occurrence:
+                    primary_wifi_weighted_by_overall_occurrence[key] = 0
+                primary_wifi_weighted_by_overall_occurrence[key] = primary_wifi_weighted_by_overall_occurrence[key] +\
+                    row["device_occurrence"] * primary_wifi_weight[list_index]
+            
+            for key in primary_wifi_weighted_by_overall_occurrence:
+                group_by_dict = agg_features[key]
+                group_by_dict["wifi_overall_weighted_occurrence"] = primary_wifi_weighted_by_overall_occurrence[key]
+                if "wifi_count" in group_by_dict:
+                    group_by_dict["wifi_group_weighted_occurrence"] = primary_wifi_weighted_by_overall_occurrence[key]/group_by_dict["wifi_count"]
+
+    if bluetooth_df.count() > 0:
+        # Number of Bluetooth entries and unique Bluetooth devices
+        bt_entry_count = bluetooth_df.groupBy(*group_by_cols).agg(F.count("bt_address").alias("bluetooth_count")).collect()
+        for row in bt_entry_count:
+            key = tuple(row[col] for col in group_by_cols)
+            if key not in agg_features:
+                agg_features[key] = {}
+            group_by_dict = agg_features[key]
+            group_by_dict["bluetooth_count"] = row["bluetooth_count"]
+        unique_bt_count = bluetooth_df.groupBy(*group_by_cols).agg(F.count_distinct("bt_address").alias("unique_bluetooth_count")).collect()
+        for row in unique_bt_count:
+            key = tuple(row[col] for col in group_by_cols)
+            group_by_dict = agg_features[key]
+            group_by_dict["unique_bluetooth_count"] = row["unique_bluetooth_count"]
+        
+        # Retrieves primary Bluetooth devices and their weighted occurrence
+        primary_bt_devices = [item["bt_address"] for item in contexts["primary_bluetooth_devices"]]
+        primary_bt_weight = [item["weighted_occurrence"] for item in contexts["primary_bluetooth_devices"]]
+        primary_bt_weighted_by_overall_occurrence = {}
+
+        # Occurrence of each Bluetooth device weighted by total Bluetooth entries in the current cluster
+        primary_bt_df = bluetooth_df.filter(F.col("bt_address").isin(*primary_bt_devices))
+        if primary_bt_df.count() > 0:
+            primary_bt_occurrence = primary_bt_df.groupBy(*group_by_cols + ["bt_name", "bt_address"])\
+                .agg(F.count("datetime").alias("device_occurrence"))\
+                .sort("device_occurrence", ascending=False).collect()
+            # Compute overall weighted occurrence of primary WiFi devices
+            for row in primary_bt_occurrence:
+                key = tuple(row[col] for col in group_by_cols)
+                list_index = primary_bt_devices.index(row["bt_address"])
+                if key not in primary_bt_weighted_by_overall_occurrence:
+                    primary_bt_weighted_by_overall_occurrence[key] = 0
+                primary_bt_weighted_by_overall_occurrence[key] = primary_bt_weighted_by_overall_occurrence[key] +\
+                    row["device_occurrence"] * primary_bt_weight[list_index]
+            
+            for key in primary_bt_weighted_by_overall_occurrence:
+                group_by_dict = agg_features[key]
+                group_by_dict["bt_overall_weighted_occurrence"] = primary_bt_weighted_by_overall_occurrence[key]
+                if "bluetooth_count" in group_by_dict:
+                    group_by_dict["bt_group_weighted_occurrence"] = primary_bt_weighted_by_overall_occurrence[key]/group_by_dict["bluetooth_count"]
+
+    return agg_features
+
+@F.udf(ArrayType(TimestampType()))
+def generate_rows_for_each_minute(start_datetime, end_datetime):
+    """
+    Creates a list of rows each representing each minute between input start and end datetimes.
+    Used to insert new rows for durations such as phone and app usage for consistency.
+    """
+    return [(start_datetime + timedelta(minutes=i)) for i in range(0, (end_datetime - start_datetime).seconds // 60 + 1)]
+
+
+def extract_custom_agg_features(user_id, group_by_cols):
+    """
+    Prepares dataframes and make triggers to extract features aggregated based on input columns.
+    """
+    # Retrieves pre-saved contexts
+    with open(f"{user_id}/{user_id}_contexts.json", "r") as f:
+        contexts = json.load(f)
+
+    # Filter data for the particular day
+    physical_mobility = process_activity_data(user_id)\
+        .withColumn("datetime", udf_datetime_from_timestamp(F.col("timestamp").cast(FloatType()))-timedelta(hours=2))\
+        .withColumn("date", udf_get_date_from_datetime(F.col("datetime")))
+    
+    ambient_light = process_light_data(user_id)\
+        .withColumn("datetime", udf_generate_datetime(F.col("date"), F.col("hour"), F.col("minute")))\
+        .withColumn("datetime", F.col("datetime")-timedelta(hours=2))\
+        .withColumn("date", udf_get_date_from_datetime(F.col("datetime")))\
+        .withColumn("is_dark", F.when(F.col("min_light_lux") <= contexts["dark_threshold"], 1).otherwise(0))
+    
+    ambient_noise = process_noise_data_with_conv_estimate(user_id)\
+        .withColumn("datetime", udf_generate_datetime(F.col("date"), F.col("hour"), F.col("minute")))\
+        .withColumn("datetime", F.col("datetime")-timedelta(hours=2))\
+        .withColumn("date", udf_get_date_from_datetime(F.col("datetime")))\
+        .withColumn("is_quiet", F.when(F.col("mean_decibels") <= contexts["silent_threshold"], 1).otherwise(0))
+    
+    # locations = resolve_cluster_fluctuations(user_id)\
+    locations = cross_check_cluster_with_activity_state(user_id)\
+        .withColumn("datetime", F.col("datetime")-timedelta(hours=2))\
+        .withColumn("date", udf_get_date_from_datetime(F.col("datetime")))\
+        .drop("hour", "minute")
+    location_df = locations.select(*[col for col in locations.columns if col != "ssid"]).distinct()
+
+    context_dfs = [physical_mobility, ambient_light, ambient_noise, location_df]
+    datetime_window = Window().orderBy("datetime")
+    for df_index, df in enumerate(context_dfs):
+        # Get the last entry of the previous day to get data at 00:00
+        day_transition_df = df.withColumn("next_date", F.lead(F.col("date")).over(datetime_window))\
+            .filter(F.col("next_date") != F.col("date")).dropna()
+        start_of_day_df = day_transition_df.withColumn("date", F.col("next_date"))\
+            .withColumn("datetime", udf_generate_datetime(F.col("date"), F.lit(0), F.lit(0))).drop("next_date")
+        end_of_day_df = day_transition_df.withColumn("datetime", udf_generate_datetime(F.col("date"), F.lit(23), F.lit(59))).drop("next_date")
+        context_dfs[df_index] = df.union(start_of_day_df).union(end_of_day_df).sort("datetime")\
+            .withColumn("hour", udf_get_hour_from_datetime(F.col("datetime")))\
+            .withColumn("minute", udf_get_minute_from_datetime(F.col("datetime")))\
+            .withColumn("day_of_week", F.dayofweek("datetime"))\
+            .withColumn("epoch", get_epoch_from_hour(F.col("hour")))\
+            .withColumn("next_datetime", F.lead(F.col("datetime")).over(datetime_window))\
+            .withColumn("duration", F.unix_timestamp("next_datetime") - F.unix_timestamp("datetime"))
+
+    locations = locations.join(context_dfs[3], [col for col in locations.columns if col != "ssid"], "outer")\
+        .dropDuplicates().sort("datetime")
+
+    dt_cols = ["start_timestamp", "end_timestamp", "start_phone_use_timestamp", "end_phone_use_timestamp"]
+    app_usage = process_application_usage_data(user_id)
+    for col in dt_cols:
+        app_usage = app_usage.withColumn(f"{col[:col.rfind('_')]}_datetime",\
+            udf_datetime_from_timestamp(F.col(col).cast(FloatType()))-timedelta(hours=2))
+
+    # Expand each phone usage instance into multiple rows based on duration
+    expanded_app_usage_df = app_usage.withColumn("minute_rows",\
+        generate_rows_for_each_minute(F.col("start_datetime"), F.col("end_datetime")))\
+        .select(*[col for col in app_usage.columns if "duration" not in col] + \
+            [F.col("usage_duration").alias("app_use_instance_duration"),\
+            F.col("duration").alias("phone_use_instance_duration"),\
+            F.explode("minute_rows").alias("datetime")])\
+        .withColumn("date", udf_get_date_from_datetime(F.col("datetime")))\
+        .withColumn("hour", udf_get_hour_from_datetime(F.col("datetime")))\
+        .withColumn("minute", udf_get_minute_from_datetime(F.col("datetime")))\
+        .withColumn("day_of_week", F.dayofweek("datetime"))\
+        .withColumn("epoch", get_epoch_from_hour(F.col("hour")))\
+        .withColumn("usage_duration", F.lit(60)).sort("datetime")
+
+    phone_usage_df = expanded_app_usage_df.select("start_phone_use_datetime",\
+        "end_phone_use_datetime", "phone_use_instance_duration").distinct()
+    expanded_phone_usage_df = phone_usage_df.withColumn("minute_rows",\
+        generate_rows_for_each_minute(F.col("start_phone_use_datetime"), F.col("end_phone_use_datetime")))\
+        .select(*[col for col in phone_usage_df.columns] + [F.explode("minute_rows").alias("datetime")])\
+        .withColumn("date", udf_get_date_from_datetime(F.col("datetime")))\
+        .withColumn("hour", udf_get_hour_from_datetime(F.col("datetime")))\
+        .withColumn("minute", udf_get_minute_from_datetime(F.col("datetime")))\
+        .withColumn("day_of_week", F.dayofweek("datetime"))\
+        .withColumn("epoch", get_epoch_from_hour(F.col("hour")))\
+        .withColumn("usage_duration", F.lit(60)).sort("datetime")
+
+    bluetooth_df = process_bluetooth_data(user_id).drop("temp_bt_name")\
+        .withColumn("datetime", udf_datetime_from_timestamp(F.col("timestamp").cast(FloatType())))\
+        .withColumn("date", udf_get_date_from_datetime(F.col("datetime")))\
+        .withColumn("hour", udf_get_hour_from_datetime(F.col("datetime")))\
+        .withColumn("minute", udf_get_minute_from_datetime(F.col("datetime")))\
+        .withColumn("day_of_week", F.dayofweek("datetime"))\
+        .withColumn("epoch", get_epoch_from_hour(F.col("hour"))).sort("datetime")
+
+    # Add location cluster to all other dfs
+    cluster_transitions = locations.select(*["datetime", "cluster_id"]).dropDuplicates()\
+        .withColumn("prev_cluster", F.lag(F.col("cluster_id")).over(datetime_window))\
+        .withColumn("prev_location_datetime", F.lag(F.col("datetime")).over(datetime_window))\
+        .filter(F.col("prev_cluster") != F.col("cluster_id")).sort("datetime")\
+        .withColumnRenamed("datetime", "location_datetime")
+    
+    first_transition_row = cluster_transitions.orderBy("location_datetime").first()
+    first_transition_location_datetime = first_transition_row["prev_location_datetime"]
+    first_cluster_id = first_transition_row["prev_cluster"]
+    last_transition_row = cluster_transitions.orderBy(F.desc("location_datetime")).first()
+    last_transition_location_datetime = last_transition_row["location_datetime"]
+    last_cluster_id = last_transition_row["cluster_id"]
+    dfs_to_agg = context_dfs[:-1] + [expanded_app_usage_df, expanded_phone_usage_df, bluetooth_df] + [locations]
+    for df_index, df in enumerate(dfs_to_agg[:-1]):
+        df = df.join(cluster_transitions, ((F.col("datetime") < F.col("location_datetime")) &\
+            (F.col("datetime") >= F.col("prev_location_datetime"))), "left").drop("cluster_id")\
+            .withColumn("cluster_id", F.col("prev_cluster"))\
+            .withColumn("cluster_id", F.when(F.col("datetime")>=last_transition_location_datetime, F.lit(last_cluster_id))\
+                .otherwise(F.col("cluster_id")))\
+            .withColumn("cluster_id", F.when(F.col("datetime")<first_transition_location_datetime, F.lit(first_cluster_id))\
+                .otherwise(F.col("cluster_id"))).sort("datetime")\
+            .drop("prev_cluster", "prev_location_datetime")
+        dfs_to_agg[df_index] = df
+
+    agg_features = create_agg_features(user_id, group_by_cols, *dfs_to_agg)
+
+    return agg_features
+
 def extract_day_features(user_id, date=None, visualize_cluster_contexts=False):
     """
     Extracts day-level features within a specific day and returns as a dictionary with 31 keys (date as the first key):
@@ -1443,14 +1865,15 @@ def extract_day_features(user_id, date=None, visualize_cluster_contexts=False):
     features["unique_bluetooth_device"] = bluetooth_df.select("bt_address").distinct().count()
 
     # locations = complement_location_data(user_id).withColumnRenamed("datetime", "location_datetime")\
-    # locations = resolve_cluster_fluctuations(user_id).withColumnRenamed("datetime", "location_datetime")\
-    locations = cross_check_cluster_with_activity_state(user_id).withColumnRenamed("datetime", "location_datetime")\
-        .withColumn("next_location_datetime", F.col("next_location_datetime")-timedelta(hours=2))\
+    # locations = cross_check_cluster_with_activity_state(user_id).withColumnRenamed("datetime", "location_datetime")\
+    locations = resolve_cluster_fluctuations(user_id).withColumnRenamed("datetime", "location_datetime")\
         .withColumn("location_datetime", F.col("location_datetime")-timedelta(hours=2))\
         .withColumn("date", udf_get_date_from_datetime(F.col("location_datetime")))\
         .withColumn("hour", udf_get_hour_from_datetime(F.col("location_datetime")))\
         .withColumn("minute", udf_get_minute_from_datetime(F.col("location_datetime")))\
         .filter(F.col("date") == cur_day).sort("location_datetime")
+    # .withColumn("next_location_datetime", F.col("next_location_datetime")-timedelta(hours=2))\
+
     # locations = locations.filter(F.col("date") < cur_day).orderBy(F.col("location_datetime").desc()).limit(1)\
     #     .withColumn("location_datetime", udf_generate_datetime(F.lit(cur_day), F.lit(0), F.lit(0)))\
     #     .union(locations.filter(F.col("date") == cur_day)).sort("location_datetime")
@@ -1462,35 +1885,32 @@ def extract_day_features(user_id, date=None, visualize_cluster_contexts=False):
     time_window = Window().orderBy("location_datetime")
     location_coordinates = locations.select("location_datetime", "double_latitude", "double_longitude", "cluster_id")\
         .dropDuplicates().dropna().sort("location_datetime")
-    distance_traveled = location_coordinates\
-        .withColumn("next_latitude", F.lead(F.col("double_latitude")).over(time_window))\
-        .withColumn("next_longitude", F.lead(F.col("double_longitude")).over(time_window))\
-        .filter((F.col("next_latitude").isNotNull()) & (F.col("next_longitude").isNotNull()))\
-        .withColumn("distance", distance(F.col("double_latitude"), F.col("double_longitude"),\
-                                         F.col("next_latitude"), F.col("next_longitude")))
-    total_distance = distance_traveled.agg(F.sum("distance")).collect()[0][0]
-    features["total_distance_traveled"] = total_distance
+    # distance_traveled = location_coordinates\
+    #     .withColumn("next_latitude", F.lead(F.col("double_latitude")).over(time_window))\
+    #     .withColumn("next_longitude", F.lead(F.col("double_longitude")).over(time_window))\
+    #     .filter((F.col("next_latitude").isNotNull()) & (F.col("next_longitude").isNotNull()))\
+    #     .withColumn("distance", distance(F.col("double_latitude"), F.col("double_longitude"),\
+    #                                      F.col("next_latitude"), F.col("next_longitude")))
+    # total_distance = distance_traveled.agg(F.sum("distance")).collect()[0][0]
+    # features["total_distance_traveled"] = total_distance
 
-    # Location variance
-    latitude_variance = location_coordinates.agg(F.variance("double_latitude")).collect()[0][0]
-    longitude_variance = location_coordinates.agg(F.variance("double_longitude")).collect()[0][0]
-    location_variance = math.log(latitude_variance + longitude_variance)
-    features["location_variance"] = location_variance
+    # # Location variance
+    # latitude_variance = location_coordinates.agg(F.variance("double_latitude")).collect()[0][0]
+    # longitude_variance = location_coordinates.agg(F.variance("double_longitude")).collect()[0][0]
+    # location_variance = math.log(latitude_variance + longitude_variance)
+    # features["location_variance"] = location_variance
 
     # Group WiFi devices at each time point to compute cluster transitions between consecutive time points
-    # cluster_transitions = locations.groupBy(*[col for col in locations.columns if col != "ssid"])\
-    #     .agg(F.concat_ws(", ", F.collect_set("ssid")).alias("WiFi_devices"))\
-    #     .dropDuplicates().sort("location_datetime")
-    # cluster_transitions = cluster_transitions.withColumn("prev_cluster", F.lag(F.col("cluster_id")).over(time_window))\
-    #     .withColumn("prev_location_datetime", F.lag(F.col("location_datetime")).over(time_window))\
-    #     .drop(*time_cols)\
-    #     .filter(F.col("prev_cluster") != F.col("cluster_id")).sort("location_datetime")
-    # cluster_transitions = cluster_transitions.withColumn("prev_cluster", F.lag(F.col("cluster_id")).over(time_window))\
-    #     .withColumn("prev_location_datetime", F.lag(F.col("location_datetime")).over(time_window))\
-    #     .drop(*time_cols)\
-    #     .filter(F.col("prev_cluster") != F.col("cluster_id")).sort("location_datetime")
-    cluster_transitions = locations.select("location_datetime", "next_location_datetime", "cluster_id", "next_cluster")\
-        .dropDuplicates().filter(F.col("cluster_id") != F.col("next_cluster")).sort("location_datetime")
+    cluster_transitions = locations.groupBy(*[col for col in locations.columns if col != "ssid"])\
+        .agg(F.concat_ws(", ", F.collect_set("ssid")).alias("WiFi_devices"))\
+        .dropDuplicates().sort("location_datetime")
+    cluster_transitions = cluster_transitions.withColumn("prev_cluster", F.lag(F.col("cluster_id")).over(time_window))\
+        .withColumn("prev_location_datetime", F.lag(F.col("location_datetime")).over(time_window))\
+        .drop(*time_cols).filter(F.col("prev_cluster") != F.col("cluster_id")).sort("location_datetime")
+
+    # V2:
+    # cluster_transitions = locations.select("location_datetime", "next_location_datetime", "cluster_id", "next_cluster")\
+    #     .dropDuplicates().filter(F.col("cluster_id") != F.col("next_cluster")).sort("location_datetime")
     # visualize_day_contexts(user_id, cur_day, physical_mobility, ambient_light, ambient_noise, app_usage, cluster_transitions)
 
     # NOTE: (N+1) cluster analysis will be involved for N cluster transition points
@@ -1498,17 +1918,20 @@ def extract_day_features(user_id, date=None, visualize_cluster_contexts=False):
     context_df_datetime_cols = ["datetime", "datetime", "datetime", "start_datetime", "bt_datetime", "location_datetime"]
 
     # First row will always be the first filtered row for the day of interest
-    # location_transition_datetimes = np.array(cluster_transitions.select("location_datetime").collect()).flatten()
-    location_transition_datetimes = np.array(cluster_transitions.select("next_location_datetime").collect()).flatten()
+    location_transition_datetimes = np.array(cluster_transitions.select("location_datetime").collect()).flatten()
+    end_of_day = datetime.strptime(f"{cur_day} 21:59", "%Y-%m-%d %H:%M").astimezone(TIMEZONE)
+    # location_transition_datetimes = np.array(cluster_transitions\
+    #     .filter(F.col("location_datetime")<=end_of_day)\
+    #     .select("next_location_datetime").collect()).flatten()
     if len(location_transition_datetimes) == 0:
         location_clusters = np.array(locations.select("cluster_id").distinct().dropna().collect()).flatten()
         features["cluster_count"] = 1
         features["unique_cluster_count"] = 1
     else:
-        # first_cluster = np.array(cluster_transitions.select("prev_cluster").collect()).flatten()[0]
-        # location_clusters = np.append(first_cluster, np.array(cluster_transitions.select("cluster_id").collect()).flatten())
-        first_cluster = np.array(cluster_transitions.select("cluster_id").dropna().collect()).flatten()[0]
-        location_clusters = np.append(first_cluster, np.array(cluster_transitions.select("next_cluster").dropna().collect()).flatten())
+        first_cluster = np.array(cluster_transitions.select("prev_cluster").collect()).flatten()[0]
+        location_clusters = np.append(first_cluster, np.array(cluster_transitions.select("cluster_id").collect()).flatten())
+        # first_cluster = np.array(cluster_transitions.select("cluster_id").dropna().collect()).flatten()[0]
+        # location_clusters = np.append(first_cluster, np.array(cluster_transitions.select("next_cluster").dropna().collect()).flatten())
         features["cluster_count"] = len(location_clusters)
         features["unique_cluster_count"] = len(list(set(location_clusters)))
 
@@ -1518,7 +1941,7 @@ def extract_day_features(user_id, date=None, visualize_cluster_contexts=False):
     for cluster_index, cluster in enumerate(location_clusters):
         if cluster_index == 0:
             if len(location_transition_datetimes) == 0:
-                cluster_end_datetime = datetime.strptime(f"{cur_day} 21:59", "%Y-%m-%d %H:%M").astimezone(TIMEZONE)
+                cluster_end_datetime = end_of_day
             else:
                 cluster_end_datetime = (location_transition_datetimes[cluster_index]).astimezone(TIMEZONE)
             # Compute start datetime as the minimum of all context dataframes
@@ -1538,7 +1961,7 @@ def extract_day_features(user_id, date=None, visualize_cluster_contexts=False):
                         (F.col(context_df_datetime_cols[context_index]) < cluster_end_datetime)))
         else:
             cluster_start_datetime = (location_transition_datetimes[-1]).astimezone(TIMEZONE)
-            cluster_end_datetime = datetime.strptime(f"{cur_day} 21:59", "%Y-%m-%d %H:%M").astimezone(TIMEZONE)
+            cluster_end_datetime = end_of_day
             for context_index, context_df in enumerate(context_dfs):
                 cluster_context_dfs[context_index].append(context_df.filter(F.col(context_df_datetime_cols[context_index]) >= cluster_start_datetime))
         cluster_time_range.append((cluster_start_datetime, cluster_end_datetime))
@@ -1610,9 +2033,9 @@ def extract_day_features(user_id, date=None, visualize_cluster_contexts=False):
                 cluster_context_dfs[3][cluster_index] = app_usage_df
 
             arranged_contexts = [cluster_context_dfs[i][cluster_index] for i in [1, 2, 0, 3]]
-            visualize_context_breakdown(user_id, *[df.toPandas() if df.count() > 0 else None for df in arranged_contexts],\
-                f"Contexts At Location Cluster {cluster}: {cur_day} {pd.to_datetime(cluster_time_range[cluster_index][0]).strftime('%H:%M')} - {pd.to_datetime(cluster_time_range[cluster_index][1]).strftime('%H:%M')}",\
-                f"{cur_day}_cluster{cluster}_{pd.to_datetime(cluster_time_range[cluster_index][0]).strftime('%H%M')}_contexts")
+            # visualize_context_breakdown(user_id, *[df.toPandas() if df.count() > 0 else None for df in arranged_contexts],\
+            #     f"Contexts At Location Cluster {cluster}: {cur_day} {pd.to_datetime(cluster_time_range[cluster_index][0]).strftime('%H:%M')} - {pd.to_datetime(cluster_time_range[cluster_index][1]).strftime('%H:%M')}",\
+            #     f"{cur_day}_cluster{cluster}_{pd.to_datetime(cluster_time_range[cluster_index][0]).strftime('%H%M')}_contexts")
     
     # Retrieves pre-computed clusters
     # overall_location_info = contexts["location_clusters"]
@@ -2469,6 +2892,7 @@ def compute_high_level_personal_contexts(user_id):
     with open(f"{user_id}/{user_id}_contexts.json", "w") as f:
         json.dump(contexts, f)
 
+@F.udf(IntegerType())
 def get_epoch_from_hour(hour):
     """
     Returns epoch of the day based on input hour.
@@ -3826,7 +4250,7 @@ if __name__ == "__main__":
 
     # -- Daytime features --
     # Extracts and visualizes contexts within each visited cluster in each day
-    prepare_day_features(user_identifier, True)
+    # prepare_day_features(user_identifier, True)
     # all_day_features = prepare_day_features(user_identifier)
     # location_cols = ["total_distance_traveled", "location_variance", "cluster_count", "unique_cluster_count",\
     #                  "unknown_location_count", "normalized_unknown_location_count", "location_entropy",\
@@ -3840,24 +4264,9 @@ if __name__ == "__main__":
     #     visualize_high_level_day_events(user_identifier, day_row, f"on {date}",\
     #                                     f"high_level_contexts_{pd.to_datetime(day_row['date']).strftime('%m%d')}")
     # day_features_vs_mood(user_identifier)
+    extract_custom_agg_features(user_identifier, ["date", "epoch"])
     # -- End of block
 
     # -- Other analysis --
     # train_gbt(user_identifier)
     # -- End of block
-
-    # location_df = process_location_data(user_identifier)\
-    #     .withColumn("double_latitude", F.round(F.col("double_latitude"), 5))\
-    #     .withColumn("double_longitude", F.round(F.col("double_longitude"), 5))\
-    #     .withColumn("double_altitude", F.round(F.col("double_altitude"), 5))\
-    #     .withColumn("hour", F.col("hour").cast(IntegerType()))\
-    #     .withColumn("minute", F.col("minute").cast(IntegerType()))\
-    #     .withColumn("datetime", udf_generate_datetime(F.col("date"), F.col("hour"), F.col("minute")))\
-    #     .filter((F.col("double_latitude") != 0.0) & (F.col("double_longitude") != 0.0))
-    # location_df = location_df.withColumn("double_latitude", F.round(F.col("double_latitude"), 5))\
-    #     .withColumn("double_longitude", F.round(F.col("double_longitude"), 5))
-    # location_df = location_df.select("double_latitude", "double_longitude").distinct()
-    # latitude = np.round(np.array(location_df.select("double_latitude").collect()).flatten(), 5)
-    # longitude = np.round(np.array(location_df.select("double_longitude").collect()).flatten(), 5)
-    # plt.scatter(latitude, longitude)
-    # plt.show()
