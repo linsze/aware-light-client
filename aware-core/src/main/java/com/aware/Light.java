@@ -59,6 +59,7 @@ public class Light extends Aware_Sensor implements SensorEventListener {
 
     private static int FREQUENCY = -1;
     private static double THRESHOLD = 0;
+    private static double THRESHOLD_PERCENTAGE_CHANGE = 0;
     // Reject any data points that come in more often than frequency
     private static boolean ENFORCE_FREQUENCY = false;
 
@@ -94,11 +95,25 @@ public class Light extends Aware_Sensor implements SensorEventListener {
         //We log current accuracy on the sensor changed event
     }
 
+    /**
+     * Triggered when sensor changes are detected.
+     * Logs data points based on the following conditions:
+     * 1. enforce_freq is true/false -> current timestamp is beyond the window of specified freq -> if value is above threhold -> log
+     * 2. enforce_freq is true -> current timestamp is within the window of specified freq -> exit
+     * 3. enforce_freq is false -> current timestamp is within the window of specified freq -> absolute value change less than threshold % -> exit
+     * 4. enforce_freq is false -> current timestamp is within the window of specified freq -> absolute value change greater than threshold % -> if value is above threshold -> log
+     * @param event
+     */
     @Override
     public void onSensorChanged(SensorEvent event) {
         long TS = System.currentTimeMillis();
-        if (ENFORCE_FREQUENCY && TS < LAST_TS + FREQUENCY / 1000)
+        if (ENFORCE_FREQUENCY && TS < LAST_TS + FREQUENCY / 1000) {
             return;
+        } else if (!ENFORCE_FREQUENCY && TS < LAST_TS + FREQUENCY / 1000) {
+            if (LAST_VALUE != null && THRESHOLD_PERCENTAGE_CHANGE > 0 && (Math.abs(event.values[0] - LAST_VALUE) / LAST_VALUE) <= THRESHOLD_PERCENTAGE_CHANGE) {
+                return;
+            }
+        }
         if (LAST_VALUE != null && THRESHOLD > 0 && Math.abs(event.values[0] - LAST_VALUE) < THRESHOLD) {
             return;
         }
@@ -275,14 +290,17 @@ public class Light extends Aware_Sensor implements SensorEventListener {
 
                 tryParseIntPreference(Aware_Preferences.FREQUENCY_LIGHT, 200000);
                 tryParseDoublePreference(Aware_Preferences.THRESHOLD_LIGHT, 0.0);
+                tryParseDoublePreference(Aware_Preferences.THRESHOLD_LIGHT_PERCENTAGE_CHANGE, 0.0);
 
                 int new_frequency = Integer.parseInt(Aware.getSetting(getApplicationContext(), Aware_Preferences.FREQUENCY_LIGHT));
                 double new_threshold = Double.parseDouble(Aware.getSetting(getApplicationContext(), Aware_Preferences.THRESHOLD_LIGHT));
+                double new_threshold_percentage_change = Double.parseDouble(Aware.getSetting(getApplicationContext(), Aware_Preferences.THRESHOLD_LIGHT_PERCENTAGE_CHANGE));
                 boolean new_enforce_frequency = (Aware.getSetting(getApplicationContext(), Aware_Preferences.FREQUENCY_LIGHT_ENFORCE).equals("true")
                         || Aware.getSetting(getApplicationContext(), Aware_Preferences.ENFORCE_FREQUENCY_ALL).equals("true"));
 
                 if (FREQUENCY != new_frequency
                         || THRESHOLD != new_threshold
+                        || THRESHOLD_PERCENTAGE_CHANGE != new_threshold_percentage_change
                         || ENFORCE_FREQUENCY != new_enforce_frequency) {
 
                     sensorHandler.removeCallbacksAndMessages(null);
@@ -290,6 +308,7 @@ public class Light extends Aware_Sensor implements SensorEventListener {
 
                     FREQUENCY = new_frequency;
                     THRESHOLD = new_threshold;
+                    THRESHOLD_PERCENTAGE_CHANGE = new_threshold_percentage_change;
                     ENFORCE_FREQUENCY = new_enforce_frequency;
                 }
 

@@ -19,7 +19,7 @@ Refer to pref_aware_light.xml for all other components.
             android:key="applications"
             android:summary="Application usage and interactions"
             android:title="Applications">
-            <EditTextPreference
+            <Preference
                 android:title="Additional permissions required"
                 android:summary="None" />
             <CheckBoxPreference
@@ -50,7 +50,7 @@ Refer to pref_aware_light.xml for all other components.
             android:key="light"
             android:summary="Surrounding illumination"
             android:title="Ambient light">
-            <EditTextPreference
+            <Preference
                 android:title="Additional permissions required"
                 android:summary="None" />
             <CheckBoxPreference
@@ -61,11 +61,11 @@ Refer to pref_aware_light.xml for all other components.
                 android:summary="Ambient luminance" />
             <ListPreference
                 android:defaultValue="20000"
-                android:entries="@array/frequency_readable"
-                android:entryValues="@array/frequency_values"
+                android:entries="@array/low_frequency_readable"
+                android:entryValues="@array/low_frequency_values"
                 android:key="frequency_light"
                 android:persistent="true"
-                android:summary="Default: every 20 milliseconds"
+                android:summary="Default: every 200 milliseconds"
                 android:title="Sampling rate" />
         </PreferenceScreen>
         <PreferenceScreen
@@ -79,7 +79,7 @@ Refer to pref_aware_light.xml for all other components.
             android:key="bluetooth"
             android:summary="Nearby Bluetooth-enabled devices"
             android:title="Bluetooth">
-            <EditTextPreference
+            <Preference
                 android:title="Additional permissions required"
                 android:summary="Approximate location" />
             <CheckBoxPreference
@@ -103,7 +103,7 @@ Refer to pref_aware_light.xml for all other components.
             android:key="communication"
             android:summary="Calls and messages"
             android:title="Communication">
-            <EditTextPreference
+            <Preference
                 android:title="Additional permissions required"
                 android:summary="Access to phone, call logs, and text messages" />
             <CheckBoxPreference
@@ -124,7 +124,7 @@ Refer to pref_aware_light.xml for all other components.
             android:key="locations"
             android:summary="GPS and/or network"
             android:title="Locations">
-            <EditTextPreference
+            <Preference
                 android:title="Additional permissions required"
                 android:summary="Approximate/precise location, cellular network" />
             <CheckBoxPreference
@@ -175,7 +175,7 @@ Refer to pref_aware_light.xml for all other components.
             android:key="screen"
             android:summary="Screen states, interactions, and content"
             android:title="Screen events">
-            <EditTextPreference
+            <Preference
                 android:title="Additional permissions required"
                 android:summary="None" />
             <CheckBoxPreference
@@ -214,7 +214,7 @@ Refer to pref_aware_light.xml for all other components.
             android:key="wifi"
             android:summary="Nearby Wi-Fi visible devices"
             android:title="Wi-Fi">
-            <EditTextPreference
+            <Preference
                 android:title="Additional permissions required"
                 android:summary="Wi-Fi connectivity states, approximate location" />
             <CheckBoxPreference
@@ -237,12 +237,12 @@ Refer to pref_aware_light.xml for all other components.
     <PreferenceCategory
         android:key="device_ids"
         android:title="Device">
-        <EditTextPreference
+        <Preference
             android:key="device_label"
             android:persistent="true"
             android:summary="%s"
             android:title="Participant identifier" />
-        <EditTextPreference
+        <Preference
             android:key="device_id"
             android:persistent="true"
             android:selectable="false"

@@ -686,7 +686,7 @@ public class Aware extends Service {
                 e.printStackTrace();
             }
         }
-
+        if (study != null && !study.isClosed()) study.close();
         return studyConfig;
     }
 

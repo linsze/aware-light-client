@@ -168,9 +168,6 @@ public class Applications extends AccessibilityService {
     public void onAccessibilityEvent(AccessibilityEvent event) {
         if (event.getPackageName() == null) return;
 
-
-
-
         // if text buffer is full then send all contents in the content buffer
         if (textBuffer.size() == TEXT_BUFFER_LIMIT){
 
@@ -193,26 +190,28 @@ public class Applications extends AccessibilityService {
         // 0: only track data of the inclusive packages for screentext function
         // 1: only track data except the exclusive packages for screentext function
         // 2: by default track all apps
-        int criteria = (int) Long.parseLong(Aware.getSetting(getApplicationContext(), Aware_Preferences.PACKAGE_SPECIFICATION));
-        if (criteria == 0 || criteria == 1){
-            String app_names = Aware.getSetting(getApplicationContext(), Aware_Preferences.PACKAGE_NAMES);
-            String curr_app = event.getPackageName().toString();
-            if (criteria == 0 && !app_names.contains(curr_app)){ // package not in inclusive packages
+        int criteria;
+        try {
+            criteria = (int) Long.parseLong(Aware.getSetting(getApplicationContext(), Aware_Preferences.PACKAGE_SPECIFICATION));
+            if (criteria == 0 || criteria == 1){
+                String app_names = Aware.getSetting(getApplicationContext(), Aware_Preferences.PACKAGE_NAMES);
+                String curr_app = event.getPackageName().toString();
+                if (criteria == 0 && !app_names.contains(curr_app)){ // package not in inclusive packages
 
-                track_screentext = false;
+                    track_screentext = false;
+                }
+                else if (criteria == 1 && app_names.contains(curr_app)) { // package in exclusive packages
+                    track_screentext = false;
+                }
             }
-            else if (criteria == 1 && app_names.contains(curr_app)) { // package in exclusive packages
-                track_screentext = false;
-            }
+        } catch (NumberFormatException e) {
+            track_screentext = false;
         }
 
-
         if (Aware.getSetting(getApplicationContext(), Aware_Preferences.STATUS_SCREENTEXT).equals("true") && getScreenStatus() == 0) {
-
             // get text tree
             AccessibilityNodeInfo mNodeInfo = event.getSource();
             textTree(mNodeInfo);
-
 
             if (!currScreenText.equals("") && track_screentext && !event.isPassword()) {
 
@@ -556,19 +555,24 @@ public class Applications extends AccessibilityService {
             sendBroadcast(new Intent(Aware.ACTION_AWARE_PRIORITY_FOREGROUND));
         }
 
+        int freqInt;
         try {
             String freq = Aware.getSetting(getApplicationContext(), Aware_Preferences.FREQUENCY_APPLICATIONS);
-            int freqInt = Integer.parseInt(freq);
-            Aware.setSetting(getApplicationContext(), Aware_Preferences.FREQUENCY_APPLICATIONS, freqInt);
+            freqInt = Integer.parseInt(freq);
+            if (freqInt == 0) {
+                freqInt = 30;
+            }
         } catch (NumberFormatException e) {
-            Aware.setSetting(getApplicationContext(), Aware_Preferences.FREQUENCY_APPLICATIONS, 30);
+            freqInt = 30;
         }
+        Aware.setSetting(getApplicationContext(), Aware_Preferences.FREQUENCY_APPLICATIONS, freqInt);
 
 //        if (Aware.getSetting(getApplicationContext(), Aware_Preferences.FREQUENCY_APPLICATIONS).length() == 0) {
 //            Aware.setSetting(getApplicationContext(), Aware_Preferences.FREQUENCY_APPLICATIONS, 0);
 //        }
 
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP && Aware.getSetting(getApplicationContext(), Aware_Preferences.STATUS_APPLICATIONS).equals("true") && Integer.parseInt(Aware.getSetting(getApplicationContext(), Aware_Preferences.FREQUENCY_APPLICATIONS)) > 0) {
+//        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP && Aware.getSetting(getApplicationContext(), Aware_Preferences.STATUS_APPLICATIONS).equals("true")) {
+        if (Aware.getSetting(getApplicationContext(), Aware_Preferences.STATUS_APPLICATIONS).equals("true")) {
             try {
                 Scheduler.Schedule backgroundApps = Scheduler.getSchedule(getApplicationContext(), SCHEDULER_APPLICATIONS_BACKGROUND);
                 if (backgroundApps == null) {
@@ -582,8 +586,8 @@ public class Applications extends AccessibilityService {
                 } else {
                     if (backgroundApps.getInterval() != Long.parseLong(Aware.getSetting(this, Aware_Preferences.FREQUENCY_APPLICATIONS))) {
                         backgroundApps.setInterval(Long.parseLong(Aware.getSetting(this, Aware_Preferences.FREQUENCY_APPLICATIONS)));
-                        Scheduler.saveSchedule(this, backgroundApps);
                     }
+                    Scheduler.saveSchedule(this, backgroundApps);
                 }
 
                 if (DEBUG)

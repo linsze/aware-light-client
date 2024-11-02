@@ -78,4 +78,6 @@
     <string name="app_features">Passively collects contextual information \nPrompts self-assessed questions</string>
     <string name="app_user_control">Update sensor configuration in Settings</string>
     <string name="app_future_features">View collected data in Data</string>
+
+    <string name="loading_data_title">Retrieving data</string>
 </resources>

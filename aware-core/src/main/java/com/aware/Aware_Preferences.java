@@ -1,6 +1,8 @@
 
 package com.aware;
 
+import java.util.HashMap;
+
 /**
  * AWARE Framework core parameters
  *
@@ -264,6 +266,12 @@ public class Aware_Preferences {
      * change in value is less than this.
      */
     public static final String THRESHOLD_LIGHT = "threshold_light";
+
+    /**
+     * Light threshold of absolute change (float between 0 and 1).
+     * Do not record consecutive points if percentage change relative to previous value is less than this.
+     */
+    public static final String THRESHOLD_LIGHT_PERCENTAGE_CHANGE = "threshold_light_percentage_change";
 
     /**
      * Activate/deactivate linear accelerometer log (boolean)
@@ -786,4 +794,41 @@ public class Aware_Preferences {
      * Store list of permissions to be checked if they have been updated after redirecting from local permissions.
      */
     public static final String REDIRECTED_PERMISSIONS = "redirected_permissions";
+
+    /**
+     * List of default values for currently used preference frequencies and thresholds.
+     */
+    public static final HashMap<String, String> DEFAULT_FREQUENCIES_AND_THRESHOLDS = new HashMap<String, String>(){{
+        put(FREQUENCY_ACCELEROMETER, String.valueOf(200000));
+        put(THRESHOLD_ACCELEROMETER, String.valueOf(0.0));
+        put(FREQUENCY_APPLICATIONS, String.valueOf(30));
+        put(FREQUENCY_BAROMETER, String.valueOf(200000));
+        put(THRESHOLD_BAROMETER, String.valueOf(0.0));
+        put(FREQUENCY_BLUETOOTH, String.valueOf(60));
+        put(FREQUENCY_GRAVITY, String.valueOf(200000));
+        put(THRESHOLD_GRAVITY, String.valueOf(0.0));
+        put(FREQUENCY_GYROSCOPE, String.valueOf(200000));
+        put(THRESHOLD_GYROSCOPE, String.valueOf(0.0));
+        put(FREQUENCY_LIGHT, String.valueOf(200000));
+        put(THRESHOLD_LIGHT, String.valueOf(0.0));
+        put(THRESHOLD_LIGHT_PERCENTAGE_CHANGE, String.valueOf(0.0));
+        put(FREQUENCY_LOCATION_GPS, String.valueOf(180));
+        put(MIN_LOCATION_GPS_ACCURACY, String.valueOf(150));
+        put(FREQUENCY_LOCATION_NETWORK, String.valueOf(300));
+        put(MIN_LOCATION_NETWORK_ACCURACY, String.valueOf(1500));
+        put(LOCATION_EXPIRATION_TIME, String.valueOf(300));
+        put(FREQUENCY_LINEAR_ACCELEROMETER, String.valueOf(200000));
+        put(THRESHOLD_LINEAR_ACCELEROMETER, String.valueOf(0.0));
+        put(FREQUENCY_NETWORK_TRAFFIC, String.valueOf(60));
+        put(FREQUENCY_MAGNETOMETER, String.valueOf(200000));
+        put(THRESHOLD_MAGNETOMETER, String.valueOf(0.0));
+        put(FREQUENCY_PROCESSOR, String.valueOf(10));
+        put(FREQUENCY_WIFI, String.valueOf(60));
+        put(FREQUENCY_PROXIMITY, String.valueOf(200000));
+        put(THRESHOLD_PROXIMITY, String.valueOf(0.0));
+    }};
+
+    // Preferences/settings that have been enforced to remain as they were configured
+    // (should not allow users to change)
+    public static final String ENFORCED_CONFIGURATIONS = "enforced_configurations";
 }

@@ -26,6 +26,7 @@ import com.aware.providers.WiFi_Provider.WiFi_Data;
 import com.aware.providers.WiFi_Provider.WiFi_Sensor;
 import com.aware.utils.Aware_Sensor;
 import com.aware.utils.Encrypter;
+import com.aware.utils.PermissionUtils;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -88,6 +89,8 @@ public class WiFi extends Aware_Sensor {
         add(Manifest.permission.ACCESS_NETWORK_STATE);
     }};
 
+    private final WiFiMonitor wifiMonitor = new WiFiMonitor();
+
     @Override
     public void onCreate() {
         super.onCreate();
@@ -139,8 +142,8 @@ public class WiFi extends Aware_Sensor {
         if (PERMISSIONS_OK) {
             if (wifiManager == null) {
                 if (DEBUG) Log.d(TAG, "This device does not have a WiFi chip");
-                Aware.setSetting(this, Aware_Preferences.STATUS_WIFI, false);
                 stopSelf();
+                return START_NOT_STICKY;
             } else {
                 DEBUG = Aware.getSetting(this, Aware_Preferences.DEBUG_FLAG).equals("true");
                 Aware.setSetting(this, Aware_Preferences.STATUS_WIFI, true);
@@ -179,15 +182,29 @@ public class WiFi extends Aware_Sensor {
     public void onDestroy() {
         super.onDestroy();
 
-        unregisterReceiver(wifiMonitor);
-        if (wifiScan != null) alarmManager.cancel(wifiScan);
+        if (wifiManager != null) {
+            unregisterReceiver(wifiMonitor);
+            if (wifiScan != null) alarmManager.cancel(wifiScan);
 
-        ContentResolver.setSyncAutomatically(Aware.getAWAREAccount(this), WiFi_Provider.getAuthority(this), false);
-        ContentResolver.removePeriodicSync(
-                Aware.getAWAREAccount(this),
-                WiFi_Provider.getAuthority(this),
-                Bundle.EMPTY
-        );
+            ContentResolver.setSyncAutomatically(Aware.getAWAREAccount(this), WiFi_Provider.getAuthority(this), false);
+            ContentResolver.removePeriodicSync(
+                    Aware.getAWAREAccount(this),
+                    WiFi_Provider.getAuthority(this),
+                    Bundle.EMPTY
+            );
+        } else {
+            if (DEBUG) Log.d(TAG, "This device does not have a WiFi chip");
+            Aware.setSetting(this, Aware_Preferences.STATUS_WIFI, false);
+            //HACK: Manually disable because WiFi was not present
+            Aware.setSetting(getApplicationContext(), Aware_Preferences.STATUS_WIFI, false);
+            Intent sensorIntent = new Intent();
+            sensorIntent.setAction(PermissionUtils.SENSOR_PREFERENCE_UPDATED);
+            sensorIntent.putExtra(PermissionUtils.MULTIPLE_PREFERENCES_UPDATED, false);
+            sensorIntent.putExtra(PermissionUtils.SENSOR_PREFERENCE, Aware_Preferences.STATUS_WIFI);
+            sensorIntent.putExtra(PermissionUtils.PREFERENCE_UPDATE_DISPLAY, "WiFi was not found in this device and has been disabled.");
+            sendBroadcast(sensorIntent);
+        }
+
 
         if (Aware.DEBUG) Log.d(TAG, "WiFi service terminated...");
     }
@@ -207,8 +224,6 @@ public class WiFi extends Aware_Sensor {
             }
         }
     }
-
-    private final WiFiMonitor wifiMonitor = new WiFiMonitor();
 
     /**
      * Asynchronously get the AP we are currently connected to.
