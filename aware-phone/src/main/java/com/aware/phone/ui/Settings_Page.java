@@ -1,6 +1,7 @@
 package com.aware.phone.ui;
 
 import static com.aware.Aware.TAG;
+import static com.aware.Aware_Preferences.DEFAULT_FREQUENCIES_AND_THRESHOLDS;
 import static com.aware.utils.PermissionUtils.MULTIPLE_PREFERENCES_UPDATED;
 import static com.aware.utils.PermissionUtils.PREFERENCE_UPDATE_DISPLAY;
 import static com.aware.utils.PermissionUtils.SENSOR_PREFERENCE_MAPPINGS;
@@ -8,6 +9,7 @@ import static com.aware.utils.PermissionUtils.SERVICES_WITH_DENIED_PERMISSIONS;
 import static com.aware.utils.PermissionUtils.SERVICE_FULL_PERMISSIONS_NOT_GRANTED;
 import static com.aware.utils.PermissionUtils.SENSOR_PREFERENCE;
 import static com.aware.utils.PermissionUtils.SENSOR_PREFERENCE_UPDATED;
+import static com.aware.utils.PermissionUtils.permissionToast;
 
 import android.app.Dialog;
 import android.content.BroadcastReceiver;
@@ -205,7 +207,17 @@ public class Settings_Page extends Aware_Activity {
                 value = String.valueOf(sharedPreferences.getInt(key, 0));
         }
 
-        Aware.setSetting(getApplicationContext(), key, value);
+        String enforcedConfigurations = Aware.getSetting(getApplicationContext(), Aware_Preferences.ENFORCED_CONFIGURATIONS);
+        ArrayList<String> enforcedList = new ArrayList(Arrays.asList(enforcedConfigurations.substring(1, enforcedConfigurations.length()-1).split(", ")));
+        if (enforcedList.contains(key)) {
+            Boolean adminConfiguration = Aware.getSetting(getApplicationContext(), key).equals("true");
+            Aware.setSetting(getApplicationContext(), key, adminConfiguration);
+            if (value.equals("false")) {
+                Toast.makeText(getApplicationContext(), "Setting cannot be disabled. Please contact the research team if you wish to proceed.", Toast.LENGTH_LONG).show();
+            }
+        } else {
+            Aware.setSetting(getApplicationContext(), key, value);
+        }
         Preference pref = findPreference(key);
         if (CheckBoxPreference.class.isInstance(pref)) {
             CheckBoxPreference check = (CheckBoxPreference) findPreference(key);
@@ -492,10 +504,18 @@ public class Settings_Page extends Aware_Activity {
             String prefString = preference.getKey();
             ListPreference list = (ListPreference) findPreference(prefString);
             String freq = Aware.getSetting(getApplicationContext(), prefString);
-            list.setValue(freq);
             int entryIndex = list.findIndexOfValue(freq);
-            CharSequence entryString = list.getEntries()[entryIndex];
-            list.setSummary(entryString);
+            if (entryIndex != -1) {
+                list.setValue(freq);
+                CharSequence entryString = list.getEntries()[entryIndex];
+                list.setSummary(entryString);
+            } else if (DEFAULT_FREQUENCIES_AND_THRESHOLDS.containsKey(prefString)) {
+                freq = DEFAULT_FREQUENCIES_AND_THRESHOLDS.get(prefString);
+                list.setValue(freq);
+                entryIndex = list.findIndexOfValue(freq);
+                CharSequence entryString = list.getEntries()[entryIndex];
+                list.setSummary(entryString);
+            }
         }
     }
 
@@ -554,8 +574,9 @@ public class Settings_Page extends Aware_Activity {
             if (PreferenceScreen.class.isInstance(getPreferenceParent(pref))) {
                 PreferenceScreen parent = (PreferenceScreen) getPreferenceParent(pref);
 
-                boolean prefEnabled = Boolean.valueOf(Aware.getSetting(getApplicationContext(), Aware_Preferences.ENABLE_CONFIG_UPDATE));
-                parent.setEnabled(prefEnabled);  // enabled/disabled based on config
+                //HACK: Currently commented out until the reason for disabling is found
+//                boolean prefEnabled = Boolean.valueOf(Aware.getSetting(getApplicationContext(), Aware_Preferences.ENABLE_CONFIG_UPDATE));
+//                parent.setEnabled(prefEnabled);  // enabled/disabled based on config
 
                 ListAdapter children = parent.getRootAdapter();
                 boolean isActive = false;

@@ -36,13 +36,17 @@ import org.skyscreamer.jsonassert.JSONAssert;
 
 import java.io.FileNotFoundException;
 import java.io.IOException;
+import java.lang.reflect.Array;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Hashtable;
+import java.util.Iterator;
 import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import androidx.core.app.ActivityCompat;
 import androidx.core.app.NotificationCompat;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
@@ -331,10 +335,16 @@ public class StudyUtils extends IntentService {
         }
 
         //Set the sensors' settings first
+        ArrayList<String> enforcedPreferenceList = new ArrayList<>();
         for (int i = 0; i < sensors.length(); i++) {
             try {
                 JSONObject sensor_config = sensors.getJSONObject(i);
-                Aware.setSetting(context, sensor_config.getString("setting"), sensor_config.get("value"));
+                String setting = sensor_config.getString("setting");
+                Aware.setSetting(context, setting, sensor_config.get("value"));
+                if (sensor_config.has("enforced") && sensor_config.getString("enforced").equals("true")) {
+                    enforcedPreferenceList.add(setting);
+                }
+
             } catch (JSONException e) {
                 e.printStackTrace();
             }
@@ -357,7 +367,11 @@ public class StudyUtils extends IntentService {
                 JSONArray plugin_settings = plugin_config.getJSONArray("settings");
                 for (int j = 0; j < plugin_settings.length(); j++) {
                     JSONObject plugin_setting = plugin_settings.getJSONObject(j);
-                    Aware.setSetting(context, plugin_setting.getString("setting"), plugin_setting.get("value"), package_name);
+                    String plugin_setting_key = plugin_setting.getString("setting");
+                    Aware.setSetting(context, plugin_setting_key, plugin_setting.get("value"), package_name);
+                    if (plugin_setting.has("enforced") && plugin_setting.getString("enforced").equals("true")) {
+                        enforcedPreferenceList.add(plugin_setting_key);
+                    }
 
                     //NOTE: Status of device_usage plugin is dependent on status of screen
                     if ((package_name.contains("device_usage")) && (plugin_setting.getString("setting").contains("status_"))) {
@@ -369,6 +383,8 @@ public class StudyUtils extends IntentService {
                 e.printStackTrace();
             }
         }
+
+        Aware.setSetting(context, Aware_Preferences.ENFORCED_CONFIGURATIONS, enforcedPreferenceList.toString());
 
         //Set other schedulers
         if (schedulers.length() > 0)
@@ -516,7 +532,9 @@ public class StudyUtils extends IntentService {
                     study.close();
                     return;
                 }
-                if (jsonEquals(localConfig, newConfig, false)) {
+
+                // Dissect inner stringified JSON objects to check for configuration updates
+                if (jsonEqualsWithInnerParse(localConfig, newConfig, false)) {
                     String msg = "There are no study updates.";
                     if (Aware.DEBUG) Aware.debug(context, msg);
                     if (toast) {
@@ -672,5 +690,64 @@ public class StudyUtils extends IntentService {
         } catch (JSONException | AssertionError e) {
             return false;
         }
+    }
+
+    /**
+     * Compares two JSONObjects by dissecting the elements to compare nested JSONArrays and JSONObjects.
+     * @param obj1 JSONObject 1
+     * @param obj2 JSONObject 2
+     * @param strict Strict condition needed to call jsonEquals function
+     * @return whether input JSONObjects are equal
+     */
+    private static boolean jsonEqualsWithInnerParse(JSONObject obj1, JSONObject obj2, boolean strict) {
+        Iterator<String> objKeys = obj1.keys();
+
+        while (objKeys.hasNext()) {
+            String key = objKeys.next();
+            try {
+                String value1 = obj1.getString(key);
+                String value2 = obj2.getString(key);
+                // Check if value is a string that might contain JSON
+                if (value1.startsWith("{")) {
+                    try {
+                        JSONObject innerJson1 = new JSONObject((String) value1);
+                        JSONObject innerJson2 = new JSONObject((String) value2);
+                        if (!jsonEquals(innerJson1, innerJson2, strict)) {
+                            return false;
+                        }
+                    } catch (Exception e) {
+                        if (!value1.equals(value2)) {
+                            return false;
+                        }
+                    }
+                } else if (value1.startsWith("[")) {
+                    try {
+                        JSONArray innerArray1 = new JSONArray((String) value1);
+                        JSONArray innerArray2 = new JSONArray((String) value2);
+                        if (innerArray1.length() != innerArray2.length()) {
+                            return false;
+                        }
+
+                        for (int i = 0; i < innerArray1.length(); i++) {
+                            JSONObject innerJson1 = innerArray1.getJSONObject(i);
+                            JSONObject innerJson2 = innerArray2.getJSONObject(i);
+                            if (!jsonEquals(innerJson1, innerJson2, true)) {
+                                return false;
+                            }
+                        }
+                    } catch (Exception e) {
+                        if (!value1.equals(value2)) {
+                            return false;
+                        }
+                    }
+                } else if (!value1.equals(value2)) {
+                    // Normal string comparison
+                    return false;
+                }
+            } catch (Exception e) {
+                return false;
+            }
+        }
+        return true;
     }
 }
