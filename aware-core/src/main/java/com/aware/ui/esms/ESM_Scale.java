@@ -156,11 +156,9 @@ public class ESM_Scale extends ESM_Question {
                 }
             });
 
-            seekBar.incrementProgressBy(step_size);
-
             if (min_value >= 0) {
-                seekBar.setProgress(selected_scale_progress);
-                seekBar.setMax(max_value);
+                seekBar.setProgress((selected_scale_progress - min_value) / step_size);
+                seekBar.setMax((max_value - min_value) / step_size);
             } else {
                 seekBar.setMax(max_value * 2);
                 seekBar.setProgress(max_value); //move handle to center value
@@ -171,14 +169,15 @@ public class ESM_Scale extends ESM_Question {
                 @Override
                 public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
                     if (fromUser) {
-                        if (min_value < 0) {
-                            progress -= max_value;
-                        }
-
-                        progress /= step_size;
-                        progress *= step_size;
-
-                        selected_scale_progress = progress;
+                        selected_scale_progress = min_value + (progress * step_size);
+//                        if (min_value < 0) {
+//                            progress -= max_value;
+//                        }
+//
+//                        progress /= step_size;
+//                        progress *= step_size;
+//
+//                        selected_scale_progress = progress;
 
                         if (selected_scale_progress < min_value) {
                             selected_scale_progress = min_value;

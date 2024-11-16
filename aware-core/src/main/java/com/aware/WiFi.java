@@ -28,6 +28,7 @@ import com.aware.utils.Aware_Sensor;
 import com.aware.utils.Encrypter;
 import com.aware.utils.PermissionUtils;
 
+import java.net.URLEncoder;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -244,7 +245,7 @@ public class WiFi extends Aware_Sensor {
             rowData.put(WiFi_Sensor.TIMESTAMP, System.currentTimeMillis());
             rowData.put(WiFi_Sensor.MAC_ADDRESS, Encrypter.hashMac(mContext, mWifi.getMacAddress()));
             rowData.put(WiFi_Sensor.BSSID, Encrypter.hashMac(mContext, mWifi.getBSSID()));
-            rowData.put(WiFi_Sensor.SSID, Encrypter.hashSsid(mContext, mWifi.getSSID()));
+            rowData.put(WiFi_Sensor.SSID, Encrypter.hashSsid(mContext, URLEncoder.encode(mWifi.getSSID(), "UTF-8")));
 
             try {
                 mContext.getContentResolver().insert(WiFi_Sensor.CONTENT_URI, rowData);
