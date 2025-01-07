@@ -1,7 +1,5 @@
 package com.aware.ui.esms;
 
-import android.app.AlertDialog;
-import android.app.Dialog;
 import android.content.ContentValues;
 import android.content.Context;
 import android.content.Intent;
@@ -10,52 +8,58 @@ import android.text.method.ScrollingMovementMethod;
 import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
+import android.view.ViewGroup;
 import android.view.WindowManager;
-import android.widget.Button;
+import android.view.inputmethod.InputMethodManager;
 import android.widget.EditText;
 import android.widget.TextView;
+
 import androidx.annotation.NonNull;
 import com.aware.Aware;
 import com.aware.ESM;
 import com.aware.R;
 import com.aware.providers.ESM_Provider;
+
 import org.json.JSONException;
+import org.json.JSONObject;
 
 /**
  * Created by denzilferreira on 21/02/16.
  */
 public class ESM_Freetext extends ESM_Question {
 
+    private static EditText textInput;
+
     public ESM_Freetext() throws JSONException {
         this.setType(ESM.TYPE_ESM_TEXT);
     }
 
-    @NonNull
     @Override
-    public Dialog onCreateDialog(Bundle savedInstanceState) {
-        super.onCreateDialog(savedInstanceState);
+    public View onCreateView(LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState) {
+        return inflater.inflate(R.layout.esm_text, container, false);
+    }
 
-        AlertDialog.Builder builder = new AlertDialog.Builder(getActivity());
-
-        LayoutInflater inflater = (LayoutInflater) getActivity().getSystemService(Context.LAYOUT_INFLATER_SERVICE);
-        View ui = inflater.inflate(R.layout.esm_text, null);
-        builder.setView(ui);
-
-        esm_dialog = builder.create();
-        esm_dialog.setCanceledOnTouchOutside(false);
-
+    @Override
+    public void onViewCreated(@NonNull View view, Bundle savedInstanceState) {
+        super.onViewCreated(view, savedInstanceState);
         try {
-            TextView esm_title = (TextView) ui.findViewById(R.id.esm_title);
+            TextView esm_title = (TextView) view.findViewById(R.id.esm_title);
             esm_title.setText(getTitle());
             esm_title.setMovementMethod(ScrollingMovementMethod.getInstance());
 
-            TextView esm_instructions = (TextView) ui.findViewById(R.id.esm_instructions);
+            TextView esm_instructions = (TextView) view.findViewById(R.id.esm_instructions);
             esm_instructions.setText(getInstructions());
             esm_instructions.setMovementMethod(ScrollingMovementMethod.getInstance());
 
-            final EditText feedback = (EditText) ui.findViewById(R.id.esm_feedback);
-            feedback.requestFocus();
-            feedback.setOnClickListener(new View.OnClickListener() {
+            textInput = (EditText) view.findViewById(R.id.esm_feedback);
+            textInput.requestFocus();
+
+            String savedText = (String) sharedViewModel.getStoredData(getID());
+            if (savedText != null) {
+                textInput.setText(savedText);
+            }
+
+            textInput.setOnClickListener(new View.OnClickListener() {
                 @Override
                 public void onClick(View v) {
                     try {
@@ -66,48 +70,42 @@ public class ESM_Freetext extends ESM_Question {
                     }
                 }
             });
-            esm_dialog.getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE);
 
-            Button cancel_text = (Button) ui.findViewById(R.id.esm_cancel);
-            cancel_text.setOnClickListener(new View.OnClickListener() {
-                @Override
-                public void onClick(View v) {
-                    esm_dialog.cancel();
+            textInput.post(() -> {
+                InputMethodManager imm = (InputMethodManager) getActivity().getSystemService(Context.INPUT_METHOD_SERVICE);
+                if (imm != null) {
+                    imm.showSoftInput(textInput, InputMethodManager.SHOW_IMPLICIT);
                 }
             });
 
-            Button submit_text = (Button) ui.findViewById(R.id.esm_submit);
-            submit_text.setText(getSubmitButton());
-            submit_text.setOnClickListener(new View.OnClickListener() {
-                @Override
-                public void onClick(View v) {
-                    try {
-                        if (getExpirationThreshold() > 0 && expire_monitor != null)
-                            expire_monitor.cancel(true);
-
-                        ContentValues rowData = new ContentValues();
-                        rowData.put(ESM_Provider.ESM_Data.ANSWER_TIMESTAMP, System.currentTimeMillis());
-                        rowData.put(ESM_Provider.ESM_Data.ANSWER, feedback.getText().toString());
-                        rowData.put(ESM_Provider.ESM_Data.STATUS, ESM.STATUS_ANSWERED);
-
-                        getActivity().getContentResolver().update(ESM_Provider.ESM_Data.CONTENT_URI, rowData, ESM_Provider.ESM_Data._ID + "=" + getID(), null);
-
-                        Intent answer = new Intent(ESM.ACTION_AWARE_ESM_ANSWERED);
-                        answer.putExtra(ESM.EXTRA_ANSWER, rowData.getAsString(ESM_Provider.ESM_Data.ANSWER));
-                        getActivity().sendBroadcast(answer);
-
-                        if (Aware.DEBUG) Log.d(Aware.TAG, "Answer:" + rowData.toString());
-
-                        esm_dialog.dismiss();
-
-                    } catch (JSONException e) {
-                        e.printStackTrace();
-                    }
-                }
-            });
+            getActivity().getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE);
         } catch (JSONException e) {
             e.printStackTrace();
         }
-        return esm_dialog;
+    }
+
+    @Override
+    public void saveData() {
+        sharedViewModel.storeData(getID(), textInput.getText().toString());
+
+        ContentValues rowData = new ContentValues();
+        rowData.put(ESM_Provider.ESM_Data.ANSWER_TIMESTAMP, System.currentTimeMillis());
+        rowData.put(ESM_Provider.ESM_Data.ANSWER, textInput.getText().toString());
+        rowData.put(ESM_Provider.ESM_Data.STATUS, ESM.STATUS_ANSWERED);
+
+        getActivity().getContentResolver().update(ESM_Provider.ESM_Data.CONTENT_URI, rowData, ESM_Provider.ESM_Data._ID + "=" + getID(), null);
+
+        Intent answer = new Intent(ESM.ACTION_AWARE_ESM_ANSWERED);
+        JSONObject esmJSON = getEsm();
+        try {
+            esmJSON = esmJSON.put(ESM_Provider.ESM_Data._ID, getID());
+        } catch (JSONException e) {
+            throw new RuntimeException(e);
+        }
+        answer.putExtra(ESM.EXTRA_ESM, esmJSON.toString());
+        answer.putExtra(ESM.EXTRA_ANSWER, rowData.getAsString(ESM_Provider.ESM_Data.ANSWER));
+        getActivity().sendBroadcast(answer);
+
+        if (Aware.DEBUG) Log.d(Aware.TAG, "Answer:" + rowData.toString());
     }
 }

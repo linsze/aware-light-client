@@ -1,9 +1,7 @@
 package com.aware.ui.esms;
 
-import android.app.AlertDialog;
 import android.app.Dialog;
 import android.content.ContentValues;
-import android.content.Context;
 import android.content.Intent;
 import android.os.Bundle;
 import android.text.method.ScrollingMovementMethod;
@@ -11,6 +9,7 @@ import android.util.Log;
 import android.view.Gravity;
 import android.view.LayoutInflater;
 import android.view.View;
+import android.view.ViewGroup;
 import android.view.WindowManager;
 import android.widget.*;
 import androidx.annotation.NonNull;
@@ -20,6 +19,7 @@ import com.aware.R;
 import com.aware.providers.ESM_Provider;
 import org.json.JSONArray;
 import org.json.JSONException;
+import org.json.JSONObject;
 
 import java.util.ArrayList;
 
@@ -29,6 +29,8 @@ import java.util.ArrayList;
 public class ESM_Checkbox extends ESM_Question {
 
     public static final String esm_checkboxes = "esm_checkboxes";
+
+    private static ArrayList<String> selected_options = new ArrayList<>();
 
     public ESM_Checkbox() throws JSONException {
         this.setType(ESM.TYPE_ESM_CHECKBOX);
@@ -64,32 +66,25 @@ public class ESM_Checkbox extends ESM_Question {
         return this;
     }
 
-    @NonNull
     @Override
-    public Dialog onCreateDialog(Bundle savedInstanceState) {
-        super.onCreateDialog(savedInstanceState);
+    public View onCreateView(LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState) {
+        return inflater.inflate(R.layout.esm_checkbox, container, false);
+    }
 
-        final ArrayList<String> selected_options = new ArrayList<>();
-
-        AlertDialog.Builder builder = new AlertDialog.Builder(getActivity());
-
-        LayoutInflater inflater = (LayoutInflater) getActivity().getSystemService(Context.LAYOUT_INFLATER_SERVICE);
-        View ui = inflater.inflate(R.layout.esm_checkbox, null);
-        builder.setView(ui);
-
-        esm_dialog = builder.create();
-        esm_dialog.setCanceledOnTouchOutside(false);
-
+    @Override
+    public void onViewCreated(@NonNull View view, Bundle savedInstanceState) {
+        super.onViewCreated(view, savedInstanceState);
+        // TODO: Include SharedViewModel to restore answer from previous navigation
         try {
-            TextView esm_title = (TextView) ui.findViewById(R.id.esm_title);
+            TextView esm_title = (TextView) view.findViewById(R.id.esm_title);
             esm_title.setText(getTitle());
             esm_title.setMovementMethod(ScrollingMovementMethod.getInstance());
 
-            TextView esm_instructions = (TextView) ui.findViewById(R.id.esm_instructions);
+            TextView esm_instructions = (TextView) view.findViewById(R.id.esm_instructions);
             esm_instructions.setText(getInstructions());
             esm_instructions.setMovementMethod(ScrollingMovementMethod.getInstance());
 
-            final LinearLayout checkboxes = (LinearLayout) ui.findViewById(R.id.esm_checkboxes);
+            final LinearLayout checkboxes = (LinearLayout) view.findViewById(R.id.esm_checkboxes);
             checkboxes.setOnClickListener(new View.OnClickListener() {
                 @Override
                 public void onClick(View v) {
@@ -162,51 +157,39 @@ public class ESM_Checkbox extends ESM_Question {
                 });
                 checkboxes.addView(checked);
             }
-            Button cancel_checkbox = (Button) ui.findViewById(R.id.esm_cancel);
-            cancel_checkbox.setOnClickListener(new View.OnClickListener() {
-                @Override
-                public void onClick(View v) {
-                    esm_dialog.cancel();
-                }
-            });
-            Button submit_checkbox = (Button) ui.findViewById(R.id.esm_submit);
-            submit_checkbox.setText(getSubmitButton());
-            submit_checkbox.setOnClickListener(new View.OnClickListener() {
-                @Override
-                public void onClick(View v) {
-                    try {
-                        if (getExpirationThreshold() > 0 && expire_monitor != null)
-                            expire_monitor.cancel(true);
-
-                        ContentValues rowData = new ContentValues();
-                        rowData.put(ESM_Provider.ESM_Data.ANSWER_TIMESTAMP, System.currentTimeMillis());
-                        if (selected_options.size() > 0) {
-                            rowData.put(ESM_Provider.ESM_Data.ANSWER,
-                                    selected_options.toString()
-                                            .replace("[", "").replace("]", "")
-                            );
-                        }
-                        rowData.put(ESM_Provider.ESM_Data.STATUS, ESM.STATUS_ANSWERED);
-
-                        getContext().getContentResolver().update(ESM_Provider.ESM_Data.CONTENT_URI, rowData, ESM_Provider.ESM_Data._ID + "=" + getID(), null);
-                        selected_options.clear();
-
-                        Intent answer = new Intent(ESM.ACTION_AWARE_ESM_ANSWERED);
-                        answer.putExtra(ESM.EXTRA_ANSWER, rowData.getAsString(ESM_Provider.ESM_Data.ANSWER));
-                        getActivity().sendBroadcast(answer);
-
-                        if (Aware.DEBUG) Log.d(Aware.TAG, "Answer: " + rowData.toString());
-                        esm_dialog.dismiss();
-
-                    } catch (JSONException e) {
-                        e.printStackTrace();
-                    }
-                }
-            });
         } catch (JSONException e) {
             e.printStackTrace();
         }
+    }
 
-        return esm_dialog;
+    @Override
+    public void saveData() {
+        sharedViewModel.storeData(getID(), selected_options);
+        try {
+            if (getExpirationThreshold() > 0 && expire_monitor != null)
+                expire_monitor.cancel(true);
+
+            ContentValues rowData = new ContentValues();
+            rowData.put(ESM_Provider.ESM_Data.ANSWER_TIMESTAMP, System.currentTimeMillis());
+            if (selected_options.size() > 0) {
+                rowData.put(ESM_Provider.ESM_Data.ANSWER,
+                        selected_options.toString()
+                                .replace("[", "").replace("]", "")
+                );
+            }
+            rowData.put(ESM_Provider.ESM_Data.STATUS, ESM.STATUS_ANSWERED);
+            getContext().getContentResolver().update(ESM_Provider.ESM_Data.CONTENT_URI, rowData, ESM_Provider.ESM_Data._ID + "=" + getID(), null);
+
+            Intent answer = new Intent(ESM.ACTION_AWARE_ESM_ANSWERED);
+            JSONObject esmJSON = getEsm();
+            esmJSON = esmJSON.put(ESM_Provider.ESM_Data._ID, getID());
+            answer.putExtra(ESM.EXTRA_ESM, esmJSON.toString());
+            answer.putExtra(ESM.EXTRA_ANSWER, rowData.getAsString(ESM_Provider.ESM_Data.ANSWER));
+            getActivity().sendBroadcast(answer);
+
+            if (Aware.DEBUG) Log.d(Aware.TAG, "Answer: " + rowData.toString());
+        } catch (JSONException e) {
+            e.printStackTrace();
+        }
     }
 }

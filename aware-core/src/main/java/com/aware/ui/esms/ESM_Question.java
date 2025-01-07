@@ -6,19 +6,26 @@ package com.aware.ui.esms;
 
 import android.app.Dialog;
 import android.content.ContentValues;
+import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
 import android.database.Cursor;
 import android.os.AsyncTask;
 import android.os.Bundle;
 import android.util.Log;
+import android.view.View;
 import android.view.ViewGroup;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.fragment.app.DialogFragment;
+import androidx.fragment.app.Fragment;
+import androidx.lifecycle.ViewModelProvider;
+
 import com.aware.Aware;
 import com.aware.ESM;
 import com.aware.providers.ESM_Provider;
+import com.aware.ui.ESM_Queue;
+
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -26,7 +33,7 @@ import org.json.JSONObject;
 /**
  * Builder class for ESM questions. Any new ESM type needs to extend this class.
  */
-public class ESM_Question extends DialogFragment {
+public class ESM_Question extends Fragment {
 
     public JSONObject esm = new JSONObject();
 
@@ -45,6 +52,8 @@ public class ESM_Question extends DialogFragment {
     public static final String flow_user_answer = "user_answer";
     public static final String flow_next_esm = "next_esm";
     public static final String esm_app_integration = "esm_app_integration";
+
+    public static ESM_Queue.SharedViewModel sharedViewModel;
 
     protected ESM_Question setID(int id) {
         _id = id;
@@ -329,20 +338,32 @@ public class ESM_Question extends DialogFragment {
         return this;
     }
 
+    public JSONObject getEsm() {
+        return this.esm;
+    }
+
     /**
      * COMMON CODE TO HANDLE ESM INTERACTIONS
      */
     public Dialog esm_dialog;
     public ESMExpireMonitor expire_monitor;
 
-    /**
-     * Extended on sub-classes
-     *
-     * @param savedInstanceState
-     * @return
-     */
-    @NonNull
-    public Dialog onCreateDialog(Bundle savedInstanceState) {
+    @Override
+    public void onAttach(@NonNull Context context) {
+        super.onAttach(context);
+        sharedViewModel = new ViewModelProvider(getActivity(), new ESM_Queue.SharedViewModelFactory()).get(ESM_Queue.SharedViewModel.class);
+    }
+
+    @Override
+    public void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setRetainInstance(true);
+    }
+
+    @Override
+    public void onViewCreated(@NonNull View view, Bundle savedInstanceState) {
+        super.onViewCreated(view, savedInstanceState);
+
         try {
             if (getNotificationTimeout() > 0 && ESM.esm_notif_expire != null)
                 ESM.esm_notif_expire.cancel(true);
@@ -354,7 +375,6 @@ public class ESM_Question extends DialogFragment {
         } catch (JSONException e) {
             e.printStackTrace();
         }
-        return esm_dialog;
     }
 
     /**
@@ -437,62 +457,15 @@ public class ESM_Question extends DialogFragment {
         if (esm_dialog != null) esm_dialog.dismiss();
     }
 
-    @Override
-    public void onCancel(DialogInterface dialog) {
-        super.onCancel(dialog);
-        try {
-            if (getExpirationThreshold() > 0 && expire_monitor != null) expire_monitor.cancel(true);
-            cancelESM();
-        } catch (JSONException e) {
-            e.printStackTrace();
-        }
-    }
+    public void saveData() {}
 
     @Override
-    public void onDismiss(DialogInterface dialog) {
-        super.onDismiss(dialog);
+    public void onDestroyView() {
+        super.onDestroyView();
         try {
             if (getExpirationThreshold() > 0 && expire_monitor != null) expire_monitor.cancel(true);
         } catch (JSONException e) {
             e.printStackTrace();
-        }
-    }
-
-    @Override
-    public void onPause() {
-        super.onPause();
-
-        if (ESM.isESMVisible(getActivity().getApplicationContext())) {
-            if (Aware.DEBUG)
-                Log.d(Aware.TAG, "ESM was visible but not answered, go back to notification bar");
-
-            //Revert to NEW state
-            ContentValues rowData = new ContentValues();
-            rowData.put(ESM_Provider.ESM_Data.ANSWER_TIMESTAMP, 0);
-            rowData.put(ESM_Provider.ESM_Data.STATUS, ESM.STATUS_NEW);
-            getActivity().getContentResolver().update(ESM_Provider.ESM_Data.CONTENT_URI, rowData, ESM_Provider.ESM_Data._ID + "=" + getID(), null);
-
-            //Update notification
-            ESM.notifyESM(getActivity().getApplicationContext(), true);
-
-            if (esm_dialog != null) esm_dialog.dismiss();
-
-            getActivity().finish();
-        }
-    }
-
-    @Override
-    public void onCreate(@Nullable Bundle savedInstanceState) {
-        super.onCreate(savedInstanceState);
-        setStyle(DialogFragment.STYLE_NO_FRAME, android.R.style.Theme_DeviceDefault_Light);
-    }
-
-    @Override
-    public void onStart() {
-        super.onStart();
-        Dialog d = getDialog();
-        if (d != null) {
-            d.getWindow().setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
         }
     }
 }

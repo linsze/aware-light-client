@@ -11,6 +11,7 @@ import android.util.Log;
 import android.view.Gravity;
 import android.view.LayoutInflater;
 import android.view.View;
+import android.view.ViewGroup;
 import android.view.WindowManager;
 import android.widget.*;
 import androidx.annotation.NonNull;
@@ -20,6 +21,7 @@ import com.aware.R;
 import com.aware.providers.ESM_Provider;
 import org.json.JSONArray;
 import org.json.JSONException;
+import org.json.JSONObject;
 
 /**
  * Created by denzilferreira on 21/02/16.
@@ -27,6 +29,7 @@ import org.json.JSONException;
 public class ESM_Radio extends ESM_Question {
 
     public static final String esm_radios = "esm_radios";
+    private static RadioGroup radioOptions;
 
     public ESM_Radio() throws JSONException {
         this.setType(ESM.TYPE_ESM_RADIO);
@@ -62,30 +65,25 @@ public class ESM_Radio extends ESM_Question {
         return this;
     }
 
-    @NonNull
     @Override
-    public Dialog onCreateDialog(Bundle savedInstanceState) {
-        super.onCreateDialog(savedInstanceState);
+    public View onCreateView(LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState) {
+        return inflater.inflate(R.layout.esm_radio, container, false);
+    }
 
-        AlertDialog.Builder builder = new AlertDialog.Builder(getActivity());
-
-        LayoutInflater inflater = (LayoutInflater) getActivity().getSystemService(Context.LAYOUT_INFLATER_SERVICE);
-        final View ui = inflater.inflate(R.layout.esm_radio, null);
-        builder.setView(ui);
-
-        esm_dialog = builder.create();
-        esm_dialog.setCanceledOnTouchOutside(false);
-
+    @Override
+    public void onViewCreated(@NonNull View view, Bundle savedInstanceState) {
+        super.onViewCreated(view, savedInstanceState);
+        //TODO: Include SharedViewModel to restore answer from previous navigation
         try {
-            TextView esm_title = (TextView) ui.findViewById(R.id.esm_title);
+            TextView esm_title = (TextView) view.findViewById(R.id.esm_title);
             esm_title.setText(getTitle());
             esm_title.setMovementMethod(ScrollingMovementMethod.getInstance());
 
-            TextView esm_instructions = (TextView) ui.findViewById(R.id.esm_instructions);
+            TextView esm_instructions = (TextView) view.findViewById(R.id.esm_instructions);
             esm_instructions.setText(getInstructions());
             esm_instructions.setMovementMethod(ScrollingMovementMethod.getInstance());
 
-            final RadioGroup radioOptions = (RadioGroup) ui.findViewById(R.id.esm_radio);
+            radioOptions = (RadioGroup) view.findViewById(R.id.esm_radio);
             radioOptions.setOnClickListener(new View.OnClickListener() {
                 @Override
                 public void onClick(View v) {
@@ -141,50 +139,38 @@ public class ESM_Radio extends ESM_Question {
                     });
                 }
             }
-            Button cancel_radio = (Button) ui.findViewById(R.id.esm_cancel);
-            cancel_radio.setOnClickListener(new View.OnClickListener() {
-                @Override
-                public void onClick(View v) {
-                    esm_dialog.cancel();
-                }
-            });
-            Button submit_radio = (Button) ui.findViewById(R.id.esm_submit);
-            submit_radio.setText(getSubmitButton());
-            submit_radio.setOnClickListener(new View.OnClickListener() {
-                @Override
-                public void onClick(View v) {
-                    try {
-                        if (getExpirationThreshold() > 0 && expire_monitor != null)
-                            expire_monitor.cancel(true);
-
-                        ContentValues rowData = new ContentValues();
-                        rowData.put(ESM_Provider.ESM_Data.ANSWER_TIMESTAMP, System.currentTimeMillis());
-
-                        RadioGroup radioOptions = (RadioGroup) ui.findViewById(R.id.esm_radio);
-                        if (radioOptions.getCheckedRadioButtonId() != -1) {
-                            RadioButton selected = (RadioButton) radioOptions.getChildAt(radioOptions.getCheckedRadioButtonId());
-                            rowData.put(ESM_Provider.ESM_Data.ANSWER, String.valueOf(selected.getText()).trim());
-                        }
-                        rowData.put(ESM_Provider.ESM_Data.STATUS, ESM.STATUS_ANSWERED);
-
-                        getContext().getContentResolver().update(ESM_Provider.ESM_Data.CONTENT_URI, rowData, ESM_Provider.ESM_Data._ID + "=" + getID(), null);
-
-                        Intent answer = new Intent(ESM.ACTION_AWARE_ESM_ANSWERED);
-                        answer.putExtra(ESM.EXTRA_ANSWER, rowData.getAsString(ESM_Provider.ESM_Data.ANSWER));
-                        getActivity().sendBroadcast(answer);
-
-                        if (Aware.DEBUG) Log.d(Aware.TAG, "Answer:" + rowData.toString());
-
-                        esm_dialog.dismiss();
-                    } catch (JSONException e) {
-                        e.printStackTrace();
-                    }
-                }
-            });
         } catch (JSONException e) {
             e.printStackTrace();
         }
-
-        return esm_dialog;
     }
+
+    @Override
+    public void saveData() {
+        ContentValues rowData = new ContentValues();
+        rowData.put(ESM_Provider.ESM_Data.ANSWER_TIMESTAMP, System.currentTimeMillis());
+
+        if (radioOptions.getCheckedRadioButtonId() != -1) {
+            RadioButton selected = (RadioButton) radioOptions.getChildAt(radioOptions.getCheckedRadioButtonId());
+            String selectValue = String.valueOf(selected.getText()).trim();
+            rowData.put(ESM_Provider.ESM_Data.ANSWER, selectValue);
+            sharedViewModel.storeData(getID(), selectValue);
+        }
+        rowData.put(ESM_Provider.ESM_Data.STATUS, ESM.STATUS_ANSWERED);
+
+        getContext().getContentResolver().update(ESM_Provider.ESM_Data.CONTENT_URI, rowData, ESM_Provider.ESM_Data._ID + "=" + getID(), null);
+
+        Intent answer = new Intent(ESM.ACTION_AWARE_ESM_ANSWERED);
+        JSONObject esmJSON = getEsm();
+        try {
+            esmJSON = esmJSON.put(ESM_Provider.ESM_Data._ID, getID());
+        } catch (JSONException e) {
+            throw new RuntimeException(e);
+        }
+        answer.putExtra(ESM.EXTRA_ESM, esmJSON.toString());
+        answer.putExtra(ESM.EXTRA_ANSWER, rowData.getAsString(ESM_Provider.ESM_Data.ANSWER));
+        getActivity().sendBroadcast(answer);
+
+        if (Aware.DEBUG) Log.d(Aware.TAG, "Answer:" + rowData.toString());
+    }
+
 }

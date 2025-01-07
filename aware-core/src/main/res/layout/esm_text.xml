@@ -35,36 +35,7 @@
         android:inputType="textMultiLine"
         android:lines="@integer/maxlines_esm_text"
         android:maxLines="100"
-        android:padding="16dp"
+        android:padding="20dp"
         android:scrollbars="vertical">
-
-        <requestFocus />
     </EditText>
-
-    <LinearLayout
-        android:id="@+id/LinearLayout1"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_alignParentBottom="true"
-        android:layout_below="@+id/esm_feedback"
-        android:padding="10dp">
-
-        <Button
-            android:id="@+id/esm_cancel"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_gravity="bottom"
-            android:layout_weight="1"
-            android:text="Cancel" />
-
-        <Button
-            android:id="@+id/esm_submit"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_gravity="bottom"
-            android:layout_weight="2"
-            android:gravity="center_vertical|center_horizontal"
-            android:text="Button" />
-    </LinearLayout>
-
 </RelativeLayout>
