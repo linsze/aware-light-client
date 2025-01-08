@@ -8,7 +8,6 @@ import android.database.Cursor;
 import android.os.Bundle;
 import android.util.Log;
 import android.view.View;
-import android.view.ViewGroup;
 import android.view.WindowManager;
 import android.widget.Button;
 
@@ -28,8 +27,8 @@ import com.aware.Aware_Preferences;
 import com.aware.ESM;
 import com.aware.R;
 import com.aware.providers.ESM_Provider.ESM_Data;
+import com.aware.ui.esms.ESMFactory;
 import com.aware.ui.esms.ESM_Question;
-import com.aware.ui.esms.ESM_Question_Fragment;
 
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -48,13 +47,16 @@ public class ESM_Queue extends FragmentActivity {
     public ESM_State esmStateListener = new ESM_State();
 
     private static ArrayList<JSONObject> esmJSONList = new ArrayList<>();
-
-    private static ArrayList<ESM_Question_Fragment> esmQuestionWrappers = new ArrayList<>();
+    private static ArrayList<ESM_Question> esmQuestions = new ArrayList<>();
     private static ESMAdapter esmAdapter;
 
     private static Button prevButton;
 
     private static Button nextButton;
+
+    private static ESMFactory esmFactory = new ESMFactory();
+
+    private static ViewPager2 viewPager;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -76,16 +78,76 @@ public class ESM_Queue extends FragmentActivity {
         filter.addAction(ESM.ACTION_AWARE_ESM_QUEUE_UPDATED);
         registerReceiver(esmStateListener, filter);
 
-        esmQuestionWrappers = new ArrayList<>();
-        esmAdapter = new ESMAdapter(this, esmQuestionWrappers);
+        esmQuestions = new ArrayList<>();
+        esmAdapter = new ESMAdapter(this, esmQuestions);
         initializeQueue();
-        ViewPagerDialogFragment dialog = new ViewPagerDialogFragment();
-        dialog.show(getSupportFragmentManager(), "ViewPagerDialogFragment");
+
+        setContentView(R.layout.esm_base);
+        viewPager = findViewById(R.id.viewPager);
+        viewPager.setAdapter(esmAdapter);
+        viewPager.setUserInputEnabled(false);
+        viewPager.registerOnPageChangeCallback(new ViewPager2.OnPageChangeCallback() {
+            @Override
+            public void onPageSelected(int position) {
+                super.onPageSelected(position);
+                updateButtonStates(position);
+            }
+        });
+
+        prevButton = findViewById(R.id.prevButton);
+        nextButton = findViewById(R.id.nextButton);
+
+        prevButton.setOnClickListener(v -> {
+            int currentItem = viewPager.getCurrentItem();
+            ESM_Question esm = esmQuestions.get(currentItem);
+            if (esm != null) {
+                esm.saveData();
+            }
+            if (currentItem > 0) {
+                viewPager.setCurrentItem(currentItem - 1);
+            }
+        });
+
+        nextButton.setOnClickListener(v -> {
+            int currentItem = viewPager.getCurrentItem();
+            ESM_Question esm = esmQuestions.get(currentItem);
+            if (esm != null) {
+                esm.saveData();
+            }
+            if (currentItem < esmQuestions.size() - 1) {
+                viewPager.setCurrentItem(currentItem + 1);
+            }
+        });
     }
 
-    private static void updateButtonStates(int position) {
+    @Override
+    public void onPause() {
+        super.onPause();
+
+        if (ESM.isESMVisible(getApplicationContext())) {
+            if (Aware.DEBUG)
+                Log.d(Aware.TAG, "ESM was visible but not answered, go back to notification bar");
+
+            //Revert to NEW state
+            for (JSONObject esmJSON: esmJSONList) {
+                try {
+                    Integer esmId = esmJSON.getInt(ESM_Data._ID);
+                    ContentValues rowData = new ContentValues();
+                    rowData.put(ESM_Data.ANSWER_TIMESTAMP, 0);
+                    rowData.put(ESM_Data.STATUS, ESM.STATUS_NEW);
+                    getContentResolver().update(ESM_Data.CONTENT_URI, rowData, ESM_Data._ID + "=" + esmId, null);
+                } catch (JSONException e) {
+                    throw new RuntimeException(e);
+                }
+            }
+            ESM.notifyESM(getApplicationContext(), true);
+            finish();
+        }
+    }
+
+    private void updateButtonStates(int position) {
         prevButton.setEnabled(position > 0);
-        if (position == esmQuestionWrappers.size()-1) {
+        if (position == esmQuestions.size()-1) {
             nextButton.setText("Submit");
         }
     }
@@ -108,7 +170,8 @@ public class ESM_Queue extends FragmentActivity {
                     JSONObject esm_question = new JSONObject(current_esm.getString(current_esm.getColumnIndex(ESM_Data.JSON)));
                     esm_question = esm_question.put(ESM_Data._ID, current_esm.getInt(current_esm.getColumnIndex(ESM_Data._ID)));
                     esmJSONList.add(esm_question);
-                    esmQuestionWrappers.add(ESM_Question_Fragment.newInstance(esm_question));
+                    ESM_Question esmQuestion = esmFactory.getESM(esm_question.getInt(ESM_Question.esm_type), esm_question, current_esm.getInt(current_esm.getColumnIndex(ESM_Data._ID)));
+                    esmQuestions.add(esmQuestion);
                 } while (current_esm.moveToNext());
             }
             if (current_esm != null && !current_esm.isClosed()) current_esm.close();
@@ -220,9 +283,9 @@ public class ESM_Queue extends FragmentActivity {
     }
 
     public class ESMAdapter extends FragmentStateAdapter {
-        private ArrayList<ESM_Question_Fragment> esmQuestions;
+        private ArrayList<ESM_Question> esmQuestions;
 
-        public ESMAdapter(@NonNull FragmentActivity fragmentActivity, ArrayList<ESM_Question_Fragment> esmQuestions) {
+        public ESMAdapter(@NonNull FragmentActivity fragmentActivity, ArrayList<ESM_Question> esmQuestions) {
             super(fragmentActivity);
             this.esmQuestions = esmQuestions;
         }
@@ -236,111 +299,6 @@ public class ESM_Queue extends FragmentActivity {
         @Override
         public int getItemCount() {
             return esmQuestions.size();
-        }
-    }
-
-    public static class ViewPagerDialogFragment extends DialogFragment {
-        private ViewPager2 viewPager;
-
-        @Override
-        public void onCreate(@Nullable Bundle savedInstanceState) {
-            super.onCreate(savedInstanceState);
-            setRetainInstance(true);
-        }
-
-        @Override
-        public Dialog onCreateDialog(Bundle savedInstanceState) {
-            AlertDialog.Builder builder = new AlertDialog.Builder(getActivity());
-            View view = getActivity().getLayoutInflater().inflate(R.layout.esm_base, null);
-            viewPager = view.findViewById(R.id.viewPager);
-            viewPager.setAdapter(esmAdapter);
-            viewPager.setUserInputEnabled(false);
-            viewPager.registerOnPageChangeCallback(new ViewPager2.OnPageChangeCallback() {
-                @Override
-                public void onPageSelected(int position) {
-                    super.onPageSelected(position);
-                    updateButtonStates(position);
-                }
-            });
-
-            prevButton = view.findViewById(R.id.prevButton);
-            nextButton = view.findViewById(R.id.nextButton);
-
-            prevButton.setOnClickListener(v -> {
-                int currentItem = viewPager.getCurrentItem();
-                ESM_Question_Fragment esmWrapper = esmQuestionWrappers.get(currentItem);
-                JSONObject esmJson = esmJSONList.get(currentItem);
-                ESM_Question esm;
-
-                if (esmWrapper != null) {
-                    try {
-                        Integer esmId = esmJson.getInt(ESM_Data._ID);
-                        esm = (ESM_Question) esmWrapper.getChildFragmentManager().findFragmentByTag(ESM.TAG + esmId);
-                    } catch (JSONException e) {
-                        throw new RuntimeException(e);
-                    }
-                    if (esm != null) {
-                        esm.saveData();
-                    }
-                }
-
-                if (currentItem > 0) {
-                    viewPager.setCurrentItem(currentItem - 1);
-                }
-            });
-
-            nextButton.setOnClickListener(v -> {
-                int currentItem = viewPager.getCurrentItem();
-                ESM_Question_Fragment esmWrapper = esmQuestionWrappers.get(currentItem);
-                JSONObject esmJson = esmJSONList.get(currentItem);
-                ESM_Question esm;
-
-                if (esmWrapper != null) {
-                    try {
-                        Integer esmId = esmJson.getInt(ESM_Data._ID);
-                        esm = (ESM_Question) esmWrapper.getChildFragmentManager().findFragmentByTag(ESM.TAG + esmId);
-                    } catch (JSONException e) {
-                        throw new RuntimeException(e);
-                    }
-                    if (esm != null) {
-                        esm.saveData();
-                    }
-                }
-                if (currentItem < esmQuestionWrappers.size() - 1) {
-                    viewPager.setCurrentItem(currentItem + 1);
-                }
-            });
-            builder.setView(view);
-            Dialog dialog = builder.create();
-            dialog.setCanceledOnTouchOutside(false);
-            dialog.getWindow().clearFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE |WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM);
-            dialog.getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE);
-            return dialog;
-        }
-
-        @Override
-        public void onPause() {
-            super.onPause();
-
-            if (ESM.isESMVisible(getActivity().getApplicationContext())) {
-                if (Aware.DEBUG)
-                    Log.d(Aware.TAG, "ESM was visible but not answered, go back to notification bar");
-
-                //Revert to NEW state
-                for (JSONObject esmJSON: esmJSONList) {
-                    try {
-                        Integer esmId = esmJSON.getInt(ESM_Data._ID);
-                        ContentValues rowData = new ContentValues();
-                        rowData.put(ESM_Data.ANSWER_TIMESTAMP, 0);
-                        rowData.put(ESM_Data.STATUS, ESM.STATUS_NEW);
-                        getActivity().getContentResolver().update(ESM_Data.CONTENT_URI, rowData, ESM_Data._ID + "=" + esmId, null);
-                    } catch (JSONException e) {
-                        throw new RuntimeException(e);
-                    }
-                }
-                ESM.notifyESM(getActivity().getApplicationContext(), true);
-                getActivity().finish();
-            }
         }
     }
 }

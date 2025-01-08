@@ -40,6 +40,12 @@ public class ESM_Freetext extends ESM_Question {
     }
 
     @Override
+    public void onResume() {
+        super.onResume();
+        textInput.requestFocus();
+    }
+
+    @Override
     public void onViewCreated(@NonNull View view, Bundle savedInstanceState) {
         super.onViewCreated(view, savedInstanceState);
         try {
@@ -52,7 +58,6 @@ public class ESM_Freetext extends ESM_Question {
             esm_instructions.setMovementMethod(ScrollingMovementMethod.getInstance());
 
             textInput = (EditText) view.findViewById(R.id.esm_feedback);
-            textInput.requestFocus();
 
             String savedText = (String) sharedViewModel.getStoredData(getID());
             if (savedText != null) {

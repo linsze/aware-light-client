@@ -40,10 +40,7 @@ public class ESM_Number extends ESM_Question {
     @Override
     public void onResume() {
         super.onResume();
-        numberInput = getView().findViewById(R.id.esm_feedback);
         numberInput.requestFocus();
-        InputMethodManager imm = (InputMethodManager) requireActivity().getSystemService(Context.INPUT_METHOD_SERVICE);
-        imm.showSoftInput(numberInput, InputMethodManager.SHOW_FORCED);
     }
 
     @Override
@@ -59,7 +56,6 @@ public class ESM_Number extends ESM_Question {
             esm_instructions.setMovementMethod(ScrollingMovementMethod.getInstance());
 
             numberInput = (EditText) view.findViewById(R.id.esm_feedback);
-//            numberInput.requestFocus();
 
             String savedNumber = (String) sharedViewModel.getStoredData(getID());
             if (savedNumber != null) {

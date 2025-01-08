@@ -121,7 +121,7 @@ public class ESM_QuickAnswer extends ESM_Question {
                                 btn.setTextColor(Color.BLACK);
                             }
                             // Highlight the current selection
-                            answer.setBackgroundColor(R.color.primaryDark);
+                            answer.setBackgroundColor(R.color.primary);
                             answer.setTextColor(Color.WHITE);
 
                         } catch (JSONException e) {
