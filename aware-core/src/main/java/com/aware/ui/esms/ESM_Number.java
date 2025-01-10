@@ -12,6 +12,7 @@ import android.view.ViewGroup;
 import android.view.WindowManager;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.EditText;
+import android.widget.SeekBar;
 import android.widget.TextView;
 import androidx.annotation.NonNull;
 import com.aware.Aware;
@@ -46,6 +47,14 @@ public class ESM_Number extends ESM_Question {
     @Override
     public void onViewCreated(@NonNull View view, Bundle savedInstanceState) {
         super.onViewCreated(view, savedInstanceState);
+        // Observe changes on ViewModel and reflect them on input
+        sharedViewModel.getStoredData(getID()).observe(getViewLifecycleOwner(), value -> {
+            if (value != null) {
+                String savedNumber = (String) value;
+                numberInput.setText(savedNumber);
+            }
+        });
+
         try {
             TextView esm_title = (TextView) view.findViewById(R.id.esm_title);
             esm_title.setText(getTitle());
@@ -56,11 +65,6 @@ public class ESM_Number extends ESM_Question {
             esm_instructions.setMovementMethod(ScrollingMovementMethod.getInstance());
 
             numberInput = (EditText) view.findViewById(R.id.esm_feedback);
-
-            String savedNumber = (String) sharedViewModel.getStoredData(getID());
-            if (savedNumber != null) {
-                numberInput.setText(savedNumber);
-            }
 
             numberInput.setOnClickListener(new View.OnClickListener() {
                 @Override
@@ -73,13 +77,6 @@ public class ESM_Number extends ESM_Question {
                     }
                 }
             });
-//            getActivity().getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE);
-//            numberInput.post(() -> {
-//                InputMethodManager imm = (InputMethodManager) getActivity().getSystemService(Context.INPUT_METHOD_SERVICE);
-//                if (imm != null) {
-//                    imm.showSoftInput(numberInput, InputMethodManager.SHOW_IMPLICIT);
-//                }
-//            });
         } catch (JSONException e) {
             e.printStackTrace();
         }

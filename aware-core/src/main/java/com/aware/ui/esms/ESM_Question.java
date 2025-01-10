@@ -351,7 +351,7 @@ public class ESM_Question extends Fragment {
     @Override
     public void onAttach(@NonNull Context context) {
         super.onAttach(context);
-        sharedViewModel = new ViewModelProvider(getActivity(), new ESM_Queue.SharedViewModelFactory()).get(ESM_Queue.SharedViewModel.class);
+        sharedViewModel = new ViewModelProvider(requireActivity()).get(ESM_Queue.SharedViewModel.class);
     }
 
     @Override

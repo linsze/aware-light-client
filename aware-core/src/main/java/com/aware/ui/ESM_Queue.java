@@ -1,21 +1,16 @@
 package com.aware.ui;
 
-import android.app.AlertDialog;
-import android.app.Dialog;
 import android.app.NotificationManager;
 import android.content.*;
 import android.database.Cursor;
 import android.os.Bundle;
 import android.util.Log;
-import android.view.View;
-import android.view.WindowManager;
 import android.widget.Button;
-
+import android.widget.Toast;
 import androidx.annotation.NonNull;
-import androidx.annotation.Nullable;
-import androidx.fragment.app.DialogFragment;
 import androidx.fragment.app.Fragment;
 import androidx.fragment.app.FragmentActivity;
+import androidx.lifecycle.LiveData;
 import androidx.lifecycle.MutableLiveData;
 import androidx.lifecycle.ViewModel;
 import androidx.lifecycle.ViewModelProvider;
@@ -33,6 +28,7 @@ import com.aware.ui.esms.ESM_Question;
 import org.json.JSONException;
 import org.json.JSONObject;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.Map;
 
 /**
@@ -49,6 +45,7 @@ public class ESM_Queue extends FragmentActivity {
     private static ArrayList<JSONObject> esmJSONList = new ArrayList<>();
     private static ArrayList<ESM_Question> esmQuestions = new ArrayList<>();
     private static ESMAdapter esmAdapter;
+    private SharedViewModel sharedViewModel;
 
     private static Button prevButton;
 
@@ -78,6 +75,8 @@ public class ESM_Queue extends FragmentActivity {
         filter.addAction(ESM.ACTION_AWARE_ESM_QUEUE_UPDATED);
         registerReceiver(esmStateListener, filter);
 
+        sharedViewModel = new ViewModelProvider(this).get(SharedViewModel.class);
+        esmJSONList = new ArrayList<>();
         esmQuestions = new ArrayList<>();
         esmAdapter = new ESMAdapter(this, esmQuestions);
         initializeQueue();
@@ -175,6 +174,24 @@ public class ESM_Queue extends FragmentActivity {
                 } while (current_esm.moveToNext());
             }
             if (current_esm != null && !current_esm.isClosed()) current_esm.close();
+
+            // There may be ESM to remove due to change of answer
+            Cursor branched_esm = getContentResolver().query(ESM_Data.CONTENT_URI, null, ESM_Data.STATUS + "=" + ESM.STATUS_BRANCHED, null, ESM_Data.TIMESTAMP + " ASC");
+            if (branched_esm != null && branched_esm.moveToFirst()) {
+                do {
+                    //Load esm question JSON from database
+                    JSONObject esm_question = new JSONObject(branched_esm.getString(branched_esm.getColumnIndex(ESM_Data.JSON)));
+                    esm_question = esm_question.put(ESM_Data._ID, branched_esm.getInt(branched_esm.getColumnIndex(ESM_Data._ID)));
+                    for (int i=0; i<esmJSONList.size(); i++) {
+                        if (esmJSONList.get(i).toString().equals(esm_question.toString())) {
+                            esmJSONList.remove(i);
+                            esmQuestions.remove(i);
+                        }
+                    }
+                } while (branched_esm.moveToNext());
+            }
+            if (branched_esm != null && !branched_esm.isClosed()) branched_esm.close();
+
             esmAdapter.notifyDataSetChanged();
         } catch (JSONException e) {
             e.printStackTrace();
@@ -191,6 +208,7 @@ public class ESM_Queue extends FragmentActivity {
                 //Clean-up trials from database
                 getContentResolver().delete(ESM_Data.CONTENT_URI, ESM_Data.TRIGGER + " LIKE 'TRIAL'", null);
                 finish();
+                Toast.makeText(getApplicationContext(), "Responses submitted", Toast.LENGTH_LONG).show();
             } else if (intent.getAction().equals(ESM.ACTION_AWARE_ESM_QUEUE_UPDATED)) {
                 initializeQueue();
             }
@@ -252,34 +270,33 @@ public class ESM_Queue extends FragmentActivity {
         return timeout;
     }
 
+    /**
+     * A ViewModel shared across ESM fragments to restore data across navigation.
+     * Each ESM fragment will listen to live data changes using respective IDs as keys.
+     */
     public static class SharedViewModel extends ViewModel {
-        private MutableLiveData<Map<Integer, Object>> dialogData = new MutableLiveData<>();
-
+        private Map<Integer, MutableLiveData<Object>> esmData = new HashMap<>();
         public SharedViewModel() {}
 
         public void storeData(Integer key, Object data) {
-            Map<Integer, Object> currentData = dialogData.getValue();
-            if (currentData != null) {
-                currentData.put(key, data);
-                dialogData.setValue(currentData);
+            MutableLiveData<Object> liveData = esmData.get(key);
+            if (liveData == null) {
+                liveData = new MutableLiveData<>();
+                esmData.put(key, liveData);
             }
+            liveData.setValue(data);
         }
 
-        public Object getStoredData(Integer key) {
-            Map<Integer, Object> currentData = dialogData.getValue();
-            return currentData != null ? currentData.get(key) : null;
+        public LiveData<Object> getStoredData(Integer key) {
+            if (!esmData.containsKey(key)) {
+                esmData.put(key, new MutableLiveData<>());
+            }
+            return esmData.get(key);
         }
     }
 
-    public static class SharedViewModelFactory implements ViewModelProvider.Factory {
-        @NonNull
-        @Override
-        public <T extends ViewModel> T create(@NonNull Class<T> modelClass) {
-            if (modelClass.isAssignableFrom(SharedViewModel.class)) {
-                return (T) new SharedViewModel();
-            }
-            throw new IllegalArgumentException("Unknown ViewModel class");
-        }
+    public SharedViewModel getSharedViewModel() {
+        return sharedViewModel;
     }
 
     public class ESMAdapter extends FragmentStateAdapter {

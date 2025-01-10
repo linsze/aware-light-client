@@ -90,6 +90,13 @@ public class ESM_Likert extends ESM_Question {
     @Override
     public void onViewCreated(@NonNull View view, Bundle savedInstanceState) {
         super.onViewCreated(view, savedInstanceState);
+        sharedViewModel.getStoredData(getID()).observe(getViewLifecycleOwner(), value -> {
+            if (value != null) {
+                Float savedRating = (Float) value;
+                ratingBar.setRating(savedRating);
+            }
+        });
+
         try {
             TextView esm_title = (TextView) view.findViewById(R.id.esm_title);
             esm_title.setText(getTitle());
@@ -103,11 +110,6 @@ public class ESM_Likert extends ESM_Question {
             ratingBar.setNumStars(getLikertMax());
             ratingBar.setMax(getLikertMax());
             ratingBar.setStepSize((float) getLikertStep());
-
-            Float savedRating = (Float) sharedViewModel.getStoredData(getID());
-            if (savedRating != null) {
-                ratingBar.setRating(savedRating);
-            }
 
             ratingBar.setOnClickListener(new View.OnClickListener() {
                 @Override

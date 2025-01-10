@@ -2,6 +2,7 @@ package com.aware.ui.esms;
 
 import android.content.ContentValues;
 import android.content.Intent;
+import android.graphics.Color;
 import android.os.Bundle;
 import android.text.format.DateFormat;
 import android.text.method.ScrollingMovementMethod;
@@ -9,6 +10,7 @@ import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.Button;
 import android.widget.TextView;
 import android.widget.TimePicker;
 import androidx.annotation.NonNull;
@@ -39,6 +41,17 @@ public class ESM_Time extends ESM_Question {
     @Override
     public void onViewCreated(@NonNull View view, Bundle savedInstanceState) {
         super.onViewCreated(view, savedInstanceState);
+        // Observe changes on ViewModel and reflect them on TimePicker
+        sharedViewModel.getStoredData(getID()).observe(getViewLifecycleOwner(), value -> {
+            if (value != null) {
+                String savedTime = (String) value;
+                String[] timeParts = savedTime.split(":");
+                int savedHour = Integer.parseInt(timeParts[0]);
+                int savedMinute = Integer.parseInt(timeParts[1]);
+                timePicker.setHour(savedHour);
+                timePicker.setMinute(savedMinute);
+            }
+        });
         try {
             TextView esm_title = (TextView) view.findViewById(R.id.esm_title);
             esm_title.setText(getTitle());
@@ -51,20 +64,11 @@ public class ESM_Time extends ESM_Question {
             timePicker = (TimePicker) view.findViewById(R.id.timePicker);
             timePicker.setIs24HourView(DateFormat.is24HourFormat(getContext())); //makes the clock adjust to device's locale settings
 
-            String savedTime = (String) sharedViewModel.getStoredData(getID());
-            if (savedTime != null) {
-                String[] timeParts = savedTime.split(":");
-                int savedHour = Integer.parseInt(timeParts[0]);
-                int savedMinute = Integer.parseInt(timeParts[1]);
-                timePicker.setHour(savedHour);
-                timePicker.setMinute(savedMinute);
-            } else {
-                final Calendar chour = Calendar.getInstance();
-                int initialHour = chour.get(Calendar.HOUR_OF_DAY);
-                int initialMinute = chour.get(Calendar.MINUTE);
-                timePicker.setHour(initialHour);
-                timePicker.setMinute(initialMinute);
-            }
+            final Calendar chour = Calendar.getInstance();
+            int initialHour = chour.get(Calendar.HOUR_OF_DAY);
+            int initialMinute = chour.get(Calendar.MINUTE);
+            timePicker.setHour(initialHour);
+            timePicker.setMinute(initialMinute);
         } catch (JSONException e) {
             e.printStackTrace();
         }

@@ -48,6 +48,14 @@ public class ESM_Freetext extends ESM_Question {
     @Override
     public void onViewCreated(@NonNull View view, Bundle savedInstanceState) {
         super.onViewCreated(view, savedInstanceState);
+        // Observe changes on ViewModel and reflect them on input
+        sharedViewModel.getStoredData(getID()).observe(getViewLifecycleOwner(), value -> {
+            if (value != null) {
+                String savedText = (String) value;
+                textInput.setText(savedText);
+            }
+        });
+
         try {
             TextView esm_title = (TextView) view.findViewById(R.id.esm_title);
             esm_title.setText(getTitle());
@@ -58,11 +66,6 @@ public class ESM_Freetext extends ESM_Question {
             esm_instructions.setMovementMethod(ScrollingMovementMethod.getInstance());
 
             textInput = (EditText) view.findViewById(R.id.esm_feedback);
-
-            String savedText = (String) sharedViewModel.getStoredData(getID());
-            if (savedText != null) {
-                textInput.setText(savedText);
-            }
 
             textInput.setOnClickListener(new View.OnClickListener() {
                 @Override
@@ -75,15 +78,6 @@ public class ESM_Freetext extends ESM_Question {
                     }
                 }
             });
-
-            textInput.post(() -> {
-                InputMethodManager imm = (InputMethodManager) getActivity().getSystemService(Context.INPUT_METHOD_SERVICE);
-                if (imm != null) {
-                    imm.showSoftInput(textInput, InputMethodManager.SHOW_IMPLICIT);
-                }
-            });
-
-            getActivity().getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE);
         } catch (JSONException e) {
             e.printStackTrace();
         }

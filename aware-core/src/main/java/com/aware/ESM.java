@@ -665,6 +665,24 @@ public class ESM extends Aware_Sensor {
                 String flowAnswer = flow.getString(ESM_Question.flow_user_answer);
                 JSONObject nextESM = flow.getJSONObject(ESM_Question.flow_next_esm).getJSONObject(EXTRA_ESM);
 
+                // Check if the entry might have already been added to the queue (due to revisited flow processing caused by navigation)
+                String tempEsm = "%" + nextESM.toString() + "%";
+                Cursor existingQueueEntry = context.getContentResolver().query(ESM_Data.CONTENT_URI,null,
+                        ESM_Data.JSON + " LIKE ? AND " + ESM_Data.STATUS + " = " + ESM.STATUS_VISIBLE,
+                        new String[]{tempEsm}, ESM_Data.TIMESTAMP + " DESC");
+                int existingEsmId = -1;
+                if (existingQueueEntry != null && existingQueueEntry.moveToFirst()) {
+                    do {
+                        String existingEsm = existingQueueEntry.getString(existingQueueEntry.getColumnIndex(ESM_Data.JSON));
+                        if (existingEsm.equals(nextESM.toString())) {
+                            existingEsmId = existingQueueEntry.getInt(existingQueueEntry.getColumnIndex(ESM_Data._ID));
+                            break;
+                        }
+                    } while (existingQueueEntry.moveToNext());
+                }
+
+                if (existingQueueEntry != null && !existingQueueEntry.isClosed()) existingQueueEntry.close();
+
                 if (flowAnswer.equals(current_answer)) {
                     if (Aware.DEBUG) Log.d(ESM.TAG, "Following next question: " + nextESM);
 
@@ -678,9 +696,9 @@ public class ESM extends Aware_Sensor {
                     rowData.put(ESM_Data.STATUS, ESM.STATUS_NEW);
                     rowData.put(ESM_Data.TRIGGER, nextESM.optString(ESM_Data.TRIGGER)); //optional, defaults to ""
 
-                    context.getContentResolver().insert(ESM_Data.CONTENT_URI, rowData);
-                    Intent esmQueueUpdated = new Intent(ESM.ACTION_AWARE_ESM_QUEUE_UPDATED);
-                    context.sendBroadcast(esmQueueUpdated);
+                    if (existingEsmId == -1) {
+                        context.getContentResolver().insert(ESM_Data.CONTENT_URI, rowData);
+                    }
                 } else {
                     if (Aware.DEBUG)
                         Log.d(ESM.TAG, "Branched split: " + flowAnswer + " Skipping: " + nextESM);
@@ -695,8 +713,18 @@ public class ESM extends Aware_Sensor {
                     rowData.put(ESM_Data.STATUS, ESM.STATUS_BRANCHED);
                     rowData.put(ESM_Data.TRIGGER, nextESM.optString(ESM_Data.TRIGGER)); //optional, defaults to ""
 
-                    context.getContentResolver().insert(ESM_Data.CONTENT_URI, rowData);
+                    if (existingEsmId == -1) {
+                        context.getContentResolver().insert(ESM_Data.CONTENT_URI, rowData);
+                    } else {
+                        context.getContentResolver().update(ESM_Data.CONTENT_URI, rowData, ESM_Data._ID + "=" + existingEsmId, null);
+                    }
+
                 }
+            }
+
+            if (flows.length() > 0) {
+                Intent esmQueueUpdated = new Intent(ESM.ACTION_AWARE_ESM_QUEUE_UPDATED);
+                context.sendBroadcast(esmQueueUpdated);
             }
 
         } catch (JSONException e) {

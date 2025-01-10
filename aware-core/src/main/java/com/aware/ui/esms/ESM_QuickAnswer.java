@@ -76,9 +76,29 @@ public class ESM_QuickAnswer extends ESM_Question {
         return inflater.inflate(R.layout.esm_quick, container, false);
     }
 
+    private void updateButtonColors() {
+        for (Button btn : answer_buttons) {
+            if (btn.getText() == selected_answer) {
+                btn.setBackgroundColor(R.color.primary);
+                btn.setTextColor(Color.WHITE);
+            } else {
+                btn.setBackgroundColor(Color.LTGRAY);
+                btn.setTextColor(Color.BLACK);
+            }
+        }
+    }
+
     @Override
     public void onViewCreated(@NonNull View view, Bundle savedInstanceState) {
         super.onViewCreated(view, savedInstanceState);
+        // Observe changes on ViewModel and reflect them on button
+        sharedViewModel.getStoredData(getID()).observe(getViewLifecycleOwner(), value -> {
+            if (value != null) {
+                selected_answer = (String) value;
+                updateButtonColors();
+            }
+        });
+
         try {
             TextView esm_title = (TextView) view.findViewById(R.id.esm_title);
             esm_title.setText(getTitle());
@@ -96,11 +116,6 @@ public class ESM_QuickAnswer extends ESM_Question {
                 answersHolder.setOrientation(LinearLayout.VERTICAL);
             }
 
-            String savedAnswer = (String) sharedViewModel.getStoredData(getID());
-            if (savedAnswer != null) {
-                selected_answer = savedAnswer;
-            }
-
             for (int i = 0; i < answers.length(); i++) {
                 Button answer = new Button(getActivity());
                 LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.WRAP_CONTENT, 1.0f);
@@ -114,16 +129,9 @@ public class ESM_QuickAnswer extends ESM_Question {
                         try {
                             if (getExpirationThreshold() > 0 && expire_monitor != null)
                                 expire_monitor.cancel(true);
-
                             selected_answer = (String) answer.getText();
-                            for (Button btn : answer_buttons) {
-                                btn.setBackgroundColor(Color.LTGRAY);
-                                btn.setTextColor(Color.BLACK);
-                            }
-                            // Highlight the current selection
-                            answer.setBackgroundColor(R.color.primary);
-                            answer.setTextColor(Color.WHITE);
-
+                            sharedViewModel.storeData(getID(), selected_answer);
+                            updateButtonColors();
                         } catch (JSONException e) {
                             e.printStackTrace();
                         }

@@ -1,9 +1,6 @@
 package com.aware.ui.esms;
 
-import android.app.AlertDialog;
-import android.app.Dialog;
 import android.content.ContentValues;
-import android.content.Context;
 import android.content.Intent;
 import android.os.Bundle;
 import android.text.method.ScrollingMovementMethod;
@@ -11,7 +8,6 @@ import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
-import android.widget.Button;
 import android.widget.ImageView;
 import android.widget.TextView;
 import androidx.annotation.NonNull;
@@ -116,11 +112,15 @@ public class ESM_PAM extends ESM_Question {
         super.onViewCreated(view, savedInstanceState);
         pam_selected = "";
 
-        String savedPam = (String) sharedViewModel.getStoredData(getID());
-        if (savedPam != null) {
-            pam_selected = savedPam;
-            //TODO: Reflect restored data on display
-        }
+        // Observe changes on ViewModel and reflect them on TimePicker
+        sharedViewModel.getStoredData(getID()).observe(getViewLifecycleOwner(), value -> {
+            if (value != null) {
+                String savedPam = (String) value;
+                pam_selected = savedPam;
+                //TODO: Reflect restored data on display
+            }
+        });
+
         try {
             TextView esm_title = (TextView) view.findViewById(R.id.esm_title);
             esm_title.setText(getTitle());

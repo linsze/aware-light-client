@@ -25,7 +25,7 @@ import org.json.JSONObject;
  */
 public class ESM_Scale extends ESM_Question {
 
-    private static int selected_scale_progress = -1;
+    private int selected_scale_progress;
 
     public static final String esm_scale_min = "esm_scale_min";
     public static final String esm_scale_min_label = "esm_scale_min_label";
@@ -33,6 +33,16 @@ public class ESM_Scale extends ESM_Question {
     public static final String esm_scale_max_label = "esm_scale_max_label";
     public static final String esm_scale_step = "esm_scale_step";
     public static final String esm_scale_start = "esm_scale_start";
+
+    private static TextView current_slider_value;
+
+    private static SeekBar seekBar;
+
+    private Integer min_value;;
+
+    private Integer max_value;
+
+    private Integer step_size;
 
     public ESM_Scale() throws JSONException {
         this.setType(ESM.TYPE_ESM_SCALE);
@@ -118,6 +128,17 @@ public class ESM_Scale extends ESM_Question {
     @Override
     public void onViewCreated(@NonNull View view, Bundle savedInstanceState) {
         super.onViewCreated(view, savedInstanceState);
+        // Observe changes on ViewModel and reflect them on seekbar and slider value
+        sharedViewModel.getStoredData(getID()).observe(getViewLifecycleOwner(), value -> {
+            if (value != null) {
+                Integer savedScale = (Integer) value;
+                selected_scale_progress = savedScale;
+                seekBar = (SeekBar) view.findViewById(R.id.esm_scale);
+                seekBar.setProgress((selected_scale_progress - min_value) / step_size);
+                current_slider_value = (TextView) view.findViewById(R.id.esm_slider_value);
+                current_slider_value.setText(String.valueOf(selected_scale_progress));
+            }
+        });
 
         try {
             TextView esm_title = (TextView) view.findViewById(R.id.esm_title);
@@ -128,33 +149,12 @@ public class ESM_Scale extends ESM_Question {
             esm_instructions.setText(getInstructions());
             esm_instructions.setMovementMethod(ScrollingMovementMethod.getInstance());
 
-            final int min_value = getScaleMin();
-            final int max_value = getScaleMax();
-
-            Integer savedScale = (Integer) sharedViewModel.getStoredData(getID());
-            if (savedScale != null) {
-                selected_scale_progress = savedScale;
-            } else {
-                selected_scale_progress = getScaleStart();
-            }
-
-            final int step_size = getScaleStep();
-
-            final TextView current_slider_value = (TextView) view.findViewById(R.id.esm_slider_value);
-            current_slider_value.setText(String.valueOf(selected_scale_progress));
-
-            final SeekBar seekBar = (SeekBar) view.findViewById(R.id.esm_scale);
-            seekBar.setOnClickListener(new View.OnClickListener() {
-                @Override
-                public void onClick(View v) {
-                    try {
-                        if (getExpirationThreshold() > 0 && expire_monitor != null)
-                            expire_monitor.cancel(true);
-                    } catch (JSONException e) {
-                        e.printStackTrace();
-                    }
-                }
-            });
+            seekBar = (SeekBar) view.findViewById(R.id.esm_scale);
+            current_slider_value = (TextView) view.findViewById(R.id.esm_slider_value);
+            min_value = getScaleMin();
+            max_value = getScaleMax();
+            step_size = getScaleStep();
+            selected_scale_progress = getScaleStart();
 
             if (min_value >= 0) {
                 seekBar.setProgress((selected_scale_progress - min_value) / step_size);
@@ -184,20 +184,15 @@ public class ESM_Scale extends ESM_Question {
                         } else if (selected_scale_progress > max_value) {
                             selected_scale_progress = max_value;
                         }
-
-                        current_slider_value.setText(String.valueOf(selected_scale_progress));
+                        sharedViewModel.storeData(getID(), selected_scale_progress);
                     }
                 }
 
                 @Override
-                public void onStartTrackingTouch(SeekBar seekBar) {
-                    current_slider_value.setText("" + selected_scale_progress);
-                }
+                public void onStartTrackingTouch(SeekBar seekBar) {}
 
                 @Override
-                public void onStopTrackingTouch(SeekBar seekBar) {
-                    current_slider_value.setText("" + selected_scale_progress);
-                }
+                public void onStopTrackingTouch(SeekBar seekBar) {}
             });
 
             TextView min_scale_label = (TextView) view.findViewById(R.id.esm_min);
