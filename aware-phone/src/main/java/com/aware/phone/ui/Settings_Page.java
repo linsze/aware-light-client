@@ -162,14 +162,14 @@ public class Settings_Page extends Aware_Activity {
                     case "plugin_device_usage":
                         packageName = "com.aware.plugin.device_usage";
                         break;
-                }
-                if (packageName != null) {
-                    String bundledPackage;
-                    PackageInfo pkg = PluginsManager.isInstalled(getApplicationContext(), packageName);
-                    if (pkg != null && pkg.versionName.equals("bundled")) {
-                        bundledPackage = getApplicationContext().getPackageName();
-                        Intent open_settings = new Intent();
-                        open_settings.setComponent(new ComponentName(((bundledPackage.length() > 0) ? bundledPackage : packageName), packageName + ".Settings"));
+                    }
+                    if (packageName != null) {
+                        String bundledPackage;
+                        PackageInfo pkg = PluginsManager.isInstalled(getApplicationContext(), packageName);
+                        if (pkg != null && pkg.versionName.equals("bundled")) {
+                            bundledPackage = getApplicationContext().getPackageName();
+                            Intent open_settings = new Intent();
+                            open_settings.setComponent(new ComponentName(((bundledPackage.length() > 0) ? bundledPackage : packageName), packageName + ".Settings"));
                         startActivity(open_settings);
                     }
                 }

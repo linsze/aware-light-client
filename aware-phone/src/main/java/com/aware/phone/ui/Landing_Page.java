@@ -17,7 +17,12 @@ public class Landing_Page extends Aware_Activity {
         super.onCreate(savedInstanceState);
 
         Intent activityToRedirect = null;
-        if (Aware.isStudy(getApplicationContext())) {
+        // If the app is freshly installed (might have been uninstalled before)
+        SharedPreferences prefs = getSharedPreferences("com.aware.phone", MODE_PRIVATE);
+        if (prefs.getAll().isEmpty()) {
+            activityToRedirect = new Intent(getApplicationContext(), Configure.class);
+        }
+        else if (Aware.isStudy(getApplicationContext())) {
             activityToRedirect = new Intent(getApplicationContext(), Aware_Light_Client.class);
         } else {
             activityToRedirect = new Intent(getApplicationContext(), Configure.class);
