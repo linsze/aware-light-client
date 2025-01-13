@@ -86,6 +86,8 @@ public class ESM extends Aware_Sensor {
      */
     public static final String ACTION_AWARE_ESM_QUEUE_UPDATED = "ACTION_AWARE_ESM_QUEUE_UPDATED";
 
+    public static final String ACTION_AWARE_ESM_SUBMITTED = "ACTION_AWARE_ESM_SUBMITTED";
+
     /**
      * ESM status: new on the queue, but not displayed yet
      */
@@ -120,6 +122,11 @@ public class ESM extends Aware_Sensor {
      * ESM status: esm was replaced by another incoming esm
      */
     public static final int STATUS_REPLACED = 6;
+
+    /**
+     * ESM status: esm is finalized to be submitted
+     */
+    public static final int STATUS_SUBMITTED = 7;
 
     /**
      * ESM Dialog with free text
@@ -255,6 +262,7 @@ public class ESM extends Aware_Sensor {
         filter.addAction(ACTION_AWARE_ESM_DISMISSED);
         filter.addAction(ACTION_AWARE_ESM_EXPIRED);
         filter.addAction(ACTION_AWARE_ESM_REPLACED);
+        filter.addAction(ACTION_AWARE_ESM_SUBMITTED);
 
         registerReceiver(esmMonitor, filter);
     }
@@ -339,7 +347,7 @@ public class ESM extends Aware_Sensor {
      */
     public static boolean isESMVisible(Context c) {
         boolean is_visible = false;
-        Cursor esms_waiting = c.getContentResolver().query(ESM_Data.CONTENT_URI, null, ESM_Data.STATUS + "=" + ESM.STATUS_VISIBLE, null, ESM_Data.TIMESTAMP + " ASC LIMIT 1");
+        Cursor esms_waiting = c.getContentResolver().query(ESM_Data.CONTENT_URI, null, ESM_Data.STATUS + " IN (" + ESM.STATUS_VISIBLE + "," + ESM.STATUS_ANSWERED + ")", null, ESM_Data.TIMESTAMP + " ASC LIMIT 1");
         if (esms_waiting != null && esms_waiting.moveToFirst()) {
             is_visible = (esms_waiting.getCount() > 0);
         }
@@ -577,12 +585,6 @@ public class ESM extends Aware_Sensor {
 
                     //Check if there is a app integration
                     processAppIntegration(context);
-
-                    if (ESM_Queue.getQueueSize(context) == 0) {
-                        if (Aware.DEBUG) Log.d(TAG, "ESM Queue is done!");
-                        Intent esm_done = new Intent(ESM.ACTION_AWARE_ESM_QUEUE_COMPLETE);
-                        context.sendBroadcast(esm_done);
-                    }
                 }
 
                 if (intent.getAction().equals(ESM.ACTION_AWARE_ESM_DISMISSED)) {
@@ -616,6 +618,12 @@ public class ESM extends Aware_Sensor {
                     if (esm != null && !esm.isClosed()) esm.close();
 
                     if (Aware.DEBUG) Log.d(TAG, "Rest of ESM Queue is expired!");
+                    Intent esm_done = new Intent(ESM.ACTION_AWARE_ESM_QUEUE_COMPLETE);
+                    context.sendBroadcast(esm_done);
+                }
+
+                if (intent.getAction().equals(ESM.ACTION_AWARE_ESM_SUBMITTED)) {
+                    if (Aware.DEBUG) Log.d(TAG, "ESM Queue is done!");
                     Intent esm_done = new Intent(ESM.ACTION_AWARE_ESM_QUEUE_COMPLETE);
                     context.sendBroadcast(esm_done);
                 }
@@ -668,7 +676,7 @@ public class ESM extends Aware_Sensor {
                 // Check if the entry might have already been added to the queue (due to revisited flow processing caused by navigation)
                 String tempEsm = "%" + nextESM.toString() + "%";
                 Cursor existingQueueEntry = context.getContentResolver().query(ESM_Data.CONTENT_URI,null,
-                        ESM_Data.JSON + " LIKE ? AND " + ESM_Data.STATUS + " = " + ESM.STATUS_VISIBLE,
+                        ESM_Data.JSON + " LIKE ? AND " + ESM_Data.STATUS + " IN (" + ESM.STATUS_VISIBLE + "," + ESM.STATUS_ANSWERED + ")",
                         new String[]{tempEsm}, ESM_Data.TIMESTAMP + " DESC");
                 int existingEsmId = -1;
                 if (existingQueueEntry != null && existingQueueEntry.moveToFirst()) {

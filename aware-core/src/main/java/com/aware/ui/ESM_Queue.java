@@ -21,6 +21,7 @@ import com.aware.Aware;
 import com.aware.Aware_Preferences;
 import com.aware.ESM;
 import com.aware.R;
+import com.aware.providers.ESM_Provider;
 import com.aware.providers.ESM_Provider.ESM_Data;
 import com.aware.ui.esms.ESMFactory;
 import com.aware.ui.esms.ESM_Question;
@@ -30,6 +31,8 @@ import org.json.JSONObject;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 /**
  * Processes an  ESM queue until it's over.
@@ -109,12 +112,15 @@ public class ESM_Queue extends FragmentActivity {
 
         nextButton.setOnClickListener(v -> {
             int currentItem = viewPager.getCurrentItem();
-            ESM_Question esm = esmQuestions.get(currentItem);
-            if (esm != null) {
-                esm.saveData();
+            ESM_Question currentEsm = esmQuestions.get(currentItem);
+            if (currentEsm != null) {
+                currentEsm.saveData();
             }
             if (currentItem < esmQuestions.size() - 1) {
                 viewPager.setCurrentItem(currentItem + 1);
+            } else if (currentItem == esmQuestions.size() - 1) {
+                Intent submittedEsm = new Intent(ESM.ACTION_AWARE_ESM_SUBMITTED);
+                sendBroadcast(submittedEsm);
             }
         });
     }
@@ -148,6 +154,8 @@ public class ESM_Queue extends FragmentActivity {
         prevButton.setEnabled(position > 0);
         if (position == esmQuestions.size()-1) {
             nextButton.setText("Submit");
+        } else {
+            nextButton.setText("Next");
         }
     }
 
@@ -183,7 +191,9 @@ public class ESM_Queue extends FragmentActivity {
                     JSONObject esm_question = new JSONObject(branched_esm.getString(branched_esm.getColumnIndex(ESM_Data.JSON)));
                     esm_question = esm_question.put(ESM_Data._ID, branched_esm.getInt(branched_esm.getColumnIndex(ESM_Data._ID)));
                     for (int i=0; i<esmJSONList.size(); i++) {
-                        if (esmJSONList.get(i).toString().equals(esm_question.toString())) {
+//                        if (esmJSONList.get(i).toString().equals(esm_question.toString())) {
+                        if (esm_question.get("esm_title").equals(esmJSONList.get(i).get("esm_title")) &&
+                                esm_question.get("_id").equals(esmJSONList.get(i).get("_id"))) {
                             esmJSONList.remove(i);
                             esmQuestions.remove(i);
                         }
@@ -207,8 +217,20 @@ public class ESM_Queue extends FragmentActivity {
             if (intent.getAction().equals(ESM.ACTION_AWARE_ESM_QUEUE_COMPLETE)) {
                 //Clean-up trials from database
                 getContentResolver().delete(ESM_Data.CONTENT_URI, ESM_Data.TRIGGER + " LIKE 'TRIAL'", null);
-                finish();
-                Toast.makeText(getApplicationContext(), "Responses submitted", Toast.LENGTH_LONG).show();
+                ExecutorService executorService = Executors.newSingleThreadExecutor(); // Use single thread for sequential execution
+                // Executes data saving in the background
+                executorService.execute(() -> {
+                    for (ESM_Question esm : esmQuestions) {
+                        ContentValues rowData = new ContentValues();
+                        rowData.put(ESM_Provider.ESM_Data.STATUS, ESM.STATUS_SUBMITTED);
+                        getContentResolver().update(ESM_Provider.ESM_Data.CONTENT_URI, rowData, ESM_Provider.ESM_Data._ID + "=" + esm.getID(), null);
+                    }
+                    runOnUiThread(() -> {
+                        Toast.makeText(getApplicationContext(), "Responses submitted", Toast.LENGTH_LONG).show();
+                        finish();
+                    });
+                });
+                executorService.shutdown();
             } else if (intent.getAction().equals(ESM.ACTION_AWARE_ESM_QUEUE_UPDATED)) {
                 initializeQueue();
             }
