@@ -119,6 +119,7 @@ public class PermissionUtils {
         put(classHeading + "Bluetooth", new ArrayList<String>(){{add(Aware_Preferences.STATUS_BLUETOOTH);}});
         put(classHeading + "Locations", new ArrayList<String>(){{add(Aware_Preferences.STATUS_LOCATION_GPS); add(Aware_Preferences.STATUS_LOCATION_NETWORK); add(Aware_Preferences.STATUS_LOCATION_PASSIVE);}});
         put(classHeading + "WiFi", new ArrayList<String>(){{add(Aware_Preferences.STATUS_WIFI);}});
+        // put(classHeading + "ApplicationUsage", new ArrayList<String>(){{add(Aware_Preferences.STATUS_APPLICATION_USAGE);}});
     }};
 
     /**

@@ -14,36 +14,51 @@ Refer to pref_aware_light.xml for all other components.
             android:summary="Mode of transportation"
             android:title="Activity recognition">
         </PreferenceScreen>
+<!--        <PreferenceScreen-->
+<!--            android:icon="@drawable/ic_action_applications"-->
+<!--            android:key="applications"-->
+<!--            android:summary="Application usage and interactions"-->
+<!--            android:title="Applications">-->
+<!--            <Preference-->
+<!--                android:title="Additional permissions required"-->
+<!--                android:summary="None" />-->
+<!--            <CheckBoxPreference-->
+<!--                android:defaultValue="false"-->
+<!--                android:key="status_applications"-->
+<!--                android:persistent="true"-->
+<!--                android:title="Running applications"-->
+<!--                android:summary="Name of in-use applications" />-->
+<!--            <ListPreference-->
+<!--                android:defaultValue="0"-->
+<!--                android:entries="@array/background_process_sampling_frequency_readable"-->
+<!--                android:entryValues="@array/background_process_sampling_frequency_values_second"-->
+<!--                android:key="frequency_applications"-->
+<!--                android:persistent="true"-->
+<!--                android:dependency="status_applications"-->
+<!--                android:summary="Default: every 30 seconds (0 if disabled)"-->
+<!--                android:title="Sampling frequency of background statuses" />-->
+<!--            <CheckBoxPreference-->
+<!--                android:defaultValue="false"-->
+<!--                android:dependency="status_applications"-->
+<!--                android:key="status_notifications"-->
+<!--                android:persistent="true"-->
+<!--                android:summary="Header of notifications sent by applications, without text content"-->
+<!--                android:title="Notifications" />-->
+<!--        </PreferenceScreen>-->
         <PreferenceScreen
-            android:icon="@drawable/ic_action_applications"
-            android:key="applications"
-            android:summary="Application usage and interactions"
-            android:title="Applications">
+            android:icon="@drawable/ic_action_application_usage"
+            android:key="application_usage"
+            android:summary="Duration of application usage"
+            android:title="Application usage">
             <Preference
                 android:title="Additional permissions required"
-                android:summary="None" />
+                android:summary="Access to usage information" />
             <CheckBoxPreference
                 android:defaultValue="false"
-                android:key="status_applications"
+                android:key="status_application_usage"
                 android:persistent="true"
-                android:title="Running applications"
-                android:summary="Name of in-use applications" />
-            <ListPreference
-                android:defaultValue="0"
-                android:entries="@array/background_process_sampling_frequency_readable"
-                android:entryValues="@array/background_process_sampling_frequency_values_second"
-                android:key="frequency_applications"
-                android:persistent="true"
-                android:dependency="status_applications"
-                android:summary="Default: every 30 seconds (0 if disabled)"
-                android:title="Sampling frequency of background statuses" />
-            <CheckBoxPreference
-                android:defaultValue="false"
-                android:dependency="status_applications"
-                android:key="status_notifications"
-                android:persistent="true"
-                android:summary="Header of notifications sent by applications, without text content"
-                android:title="Notifications" />
+                android:title="Enabled"
+                android:summary="Duration of using applications" />
         </PreferenceScreen>
         <PreferenceScreen
             android:icon="@drawable/ic_action_light"

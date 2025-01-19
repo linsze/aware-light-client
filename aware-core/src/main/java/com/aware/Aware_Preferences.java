@@ -103,6 +103,11 @@ public class Aware_Preferences {
     public static final String STATUS_CRASHES = "status_crashes";
 
     /**
+     * Usage events without needing accessibility to be enabled
+     */
+    public static final String STATUS_APPLICATION_USAGE = "status_application_usage";
+
+    /**
      * Activate/deactivate battery log (boolean)
      */
     public static final String STATUS_BATTERY = "status_battery";

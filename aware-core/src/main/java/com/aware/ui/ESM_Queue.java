@@ -50,11 +50,11 @@ public class ESM_Queue extends FragmentActivity {
     private static ESMAdapter esmAdapter;
     private SharedViewModel sharedViewModel;
 
-    private static Button prevButton;
+    private Button prevButton;
 
-    private static Button nextButton;
+    private Button nextButton;
 
-    private static ESMFactory esmFactory = new ESMFactory();
+    private static final ESMFactory esmFactory = new ESMFactory();
 
     private static ViewPager2 viewPager;
 

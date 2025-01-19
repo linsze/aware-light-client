@@ -206,6 +206,7 @@ public class Aware extends Service {
     private static Intent keyboard = null;
     private static Intent scheduler = null;
     private static Intent significantSrv = null;
+    private static Intent applicationUsageSrv = null;
 
     private static AsyncStudyCheck studyCheck = null;
 
@@ -2490,6 +2491,10 @@ public class Aware extends Service {
             startAccelerometer(context);
         } else stopAccelerometer(context);
 
+        if (Aware.getSetting(context, Aware_Preferences.STATUS_APPLICATION_USAGE).equals("true")) {
+            startApplicationUsage(context);
+        } else stopApplicationUsage(context);
+
         if (Aware.getSetting(context, Aware_Preferences.STATUS_INSTALLATIONS).equals("true")) {
             startInstallations(context);
         } else stopInstallations(context);
@@ -2587,6 +2592,13 @@ public class Aware extends Service {
         if (Aware.getSetting(context, Aware_Preferences.STATUS_SCREENTEXT).equals("true")) {
             startScreenText(context);
         } else stopScreenText(context);
+    }
+
+    /**
+     * Used to check if the current service should be stopped first.
+     */
+    public static boolean isApplicationUsageActive() {
+        return (applicationUsageSrv != null);
     }
 
     public static void startPlugins(Context context) {
@@ -2701,6 +2713,7 @@ public class Aware extends Service {
 
         stopSignificant(context);
         stopAccelerometer(context);
+        stopApplicationUsage(context);
         stopBattery(context);
         stopBluetooth(context);
         stopCommunication(context);
@@ -2889,6 +2902,11 @@ public class Aware extends Service {
                 if (preferenceStatus) {
                     startScreenText(context);
                 } else stopScreenText(context);
+                break;
+            case (Aware_Preferences.STATUS_APPLICATION_USAGE):
+                if (preferenceStatus) {
+                    startApplicationUsage(context);
+                } else stopApplicationUsage(context);
                 break;
         }
     }
@@ -3524,6 +3542,29 @@ public class Aware extends Service {
         if (mqttSrv != null) {
             context.stopService(mqttSrv);
             mqttSrv = null;
+        }
+    }
+
+    /**
+     * Start application usage module
+     * @param context
+     */
+    public static void startApplicationUsage(Context context) {
+        if (context == null) return;
+        if (applicationUsageSrv == null) {
+            applicationUsageSrv = new Intent(context, ApplicationUsage.class);
+        }
+        context.startService(applicationUsageSrv);
+    }
+
+    /**
+     * Stop application usage module
+     */
+    public static void stopApplicationUsage(Context context) {
+        if (context == null) return;
+        if (applicationUsageSrv != null) {
+            context.stopService(applicationUsageSrv);
+            applicationUsageSrv = null;
         }
     }
 

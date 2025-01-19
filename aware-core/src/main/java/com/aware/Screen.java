@@ -75,6 +75,21 @@ public class Screen extends Aware_Sensor {
      */
     public static final int STATUS_SCREEN_UNLOCKED = 3;
 
+    /**
+     * Moved from device usage plugin to be shared with ApplicationUsage
+     */
+    public static final String ACTION_AWARE_PLUGIN_DEVICE_USAGE = "ACTION_AWARE_PLUGIN_DEVICE_USAGE";
+
+    /**
+     * Extra (double): how long was the phone OFF until the user turned it ON
+     */
+    public static final String EXTRA_ELAPSED_DEVICE_OFF = "elapsed_device_off";
+
+    /**
+     * Extra (double): how long was the phone ON until the user turned it OFF
+     */
+    public static final String EXTRA_ELAPSED_DEVICE_ON = "elapsed_device_on";
+    
     @Override
     public IBinder onBind(Intent intent) {
         return null;

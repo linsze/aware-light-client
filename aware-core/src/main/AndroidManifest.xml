@@ -85,6 +85,9 @@
             android:name="com.aware.Applications$BackgroundService"
             android:exported="true" />
         <service
+            android:name="com.aware.ApplicationUsage"
+            android:exported="true" />
+        <service
             android:name="com.aware.Locations"
             android:exported="true" />
         <service
@@ -213,6 +216,14 @@
             android:authorities="${applicationId}.provider.applications"
             android:exported="true"
             android:label="@string/sensor_applications"
+            android:readPermission="com.aware.READ_CONTEXT_DATA"
+            android:syncable="true"
+            android:writePermission="com.aware.WRITE_CONTEXT_DATA" />
+        <provider
+            android:name="com.aware.providers.ApplicationUsage_Provider"
+            android:authorities="${applicationId}.provider.application.usage"
+            android:exported="true"
+            android:label="@string/sensor_application_usage"
             android:readPermission="com.aware.READ_CONTEXT_DATA"
             android:syncable="true"
             android:writePermission="com.aware.WRITE_CONTEXT_DATA" />
@@ -462,6 +473,16 @@
             <meta-data
                 android:name="android.content.SyncAdapter"
                 android:resource="@xml/sync_applications" />
+        </service>
+        <service
+            android:name="com.aware.syncadapters.ApplicationUsage_Sync"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.content.SyncAdapter" />
+            </intent-filter>
+            <meta-data
+                android:name="android.content.SyncAdapter"
+                android:resource="@xml/sync_application_usage" />
         </service>
         <service
             android:name="com.aware.syncadapters.Aware_Sync"

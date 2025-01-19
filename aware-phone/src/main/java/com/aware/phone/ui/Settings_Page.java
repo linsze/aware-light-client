@@ -323,6 +323,7 @@ public class Settings_Page extends Aware_Activity {
                 findPreference(Aware_Preferences.AWARE_VERSION),
                 findPreference(Aware_Preferences.STATUS_ACCELEROMETER),
                 findPreference(Aware_Preferences.STATUS_APPLICATIONS),
+                findPreference(Aware_Preferences.STATUS_APPLICATION_USAGE),
                 findPreference(Aware_Preferences.STATUS_BAROMETER),
                 findPreference(Aware_Preferences.STATUS_BATTERY),
                 findPreference(Aware_Preferences.STATUS_BLUETOOTH),

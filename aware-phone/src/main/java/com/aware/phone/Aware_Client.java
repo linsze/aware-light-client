@@ -349,9 +349,9 @@ public class Aware_Client extends Aware_Activity implements SharedPreferences.On
             }
 
             //Check if AWARE is active on the accessibility services. Android Wear doesn't support accessibility services (no API yet...)
-            if (!Aware.is_watch(this)) {
-                Applications.isAccessibilityServiceActive(this);
-            }
+//            if (!Aware.is_watch(this)) {
+//                Applications.isAccessibilityServiceActive(this);
+//            }
 
             //Check if AWARE is allowed to run on Doze
             //Aware.isBatteryOptimizationIgnored(this, getPackageName());
@@ -364,6 +364,7 @@ public class Aware_Client extends Aware_Activity implements SharedPreferences.On
                     findPreference(Aware_Preferences.AWARE_VERSION),
                     findPreference(Aware_Preferences.STATUS_ACCELEROMETER),
                     findPreference(Aware_Preferences.STATUS_APPLICATIONS),
+                    findPreference(Aware_Preferences.STATUS_APPLICATION_USAGE),
                     findPreference(Aware_Preferences.STATUS_BAROMETER),
                     findPreference(Aware_Preferences.STATUS_BATTERY),
                     findPreference(Aware_Preferences.STATUS_BLUETOOTH),

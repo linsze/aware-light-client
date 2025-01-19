@@ -18,6 +18,7 @@ android {
         //AWARE core sensors SyncAdapters
         resValue "string", "provider_accelerometer", android.defaultConfig.applicationId + ".provider.accelerometer"
         resValue "string", "provider_applications", android.defaultConfig.applicationId + ".provider.applications"
+        resValue "string", "provider_application_usage", android.defaultConfig.applicationId + ".provider.application.usage"
         resValue "string", "provider_aware", android.defaultConfig.applicationId + ".provider.aware"
         resValue "string", "provider_barometer", android.defaultConfig.applicationId + ".provider.barometer"
         resValue "string", "provider_battery", android.defaultConfig.applicationId + ".provider.battery"
