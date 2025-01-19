@@ -37,7 +37,7 @@ import com.aware.providers.ApplicationUsage_Provider.ApplicationUsageStats;
 
 /**
  * Created by Lin Sze Khoo
- * Queries package usage events based on screen off events broadcasted by device_usage plugin
+ * Queries package usage events based on screen unlocked and locked events broadcasted by Screen service
  * Require usage access to be enabled manually (separated from typical permission access) but does not require accessibility
  */
 public class ApplicationUsage extends Aware_Sensor {
@@ -61,6 +61,10 @@ public class ApplicationUsage extends Aware_Sensor {
     private static SyncAppUsageReceiver syncAppUsageReceiver;
 
     private PackageManager packageManager;
+
+    private long lastUnlocked = 0;
+
+    private long initialTimestamp = System.currentTimeMillis();
     @Override
     public void onCreate() {
         super.onCreate();
@@ -69,7 +73,8 @@ public class ApplicationUsage extends Aware_Sensor {
         syncAppUsageReceiver = new SyncAppUsageReceiver();
         IntentFilter filter = new IntentFilter();
         filter.addAction(Aware.ACTION_AWARE_SYNC_DATA);
-        filter.addAction(Screen.ACTION_AWARE_PLUGIN_DEVICE_USAGE);
+        filter.addAction(Screen.ACTION_AWARE_SCREEN_UNLOCKED);
+        filter.addAction(Screen.ACTION_AWARE_SCREEN_LOCKED);
         registerReceiver(syncAppUsageReceiver, filter);
 
         usageStatsManager = (UsageStatsManager) getSystemService(Context.USAGE_STATS_SERVICE);
@@ -154,12 +159,19 @@ public class ApplicationUsage extends Aware_Sensor {
                 ContentResolver.requestSync(Aware.getAWAREAccount(context), ApplicationUsage_Provider.AUTHORITY, sync);
             }
 
-            if (intent.getAction().equals(Screen.ACTION_AWARE_PLUGIN_DEVICE_USAGE)) {
-                long elapsedDeviceOn = intent.getLongExtra(Screen.EXTRA_ELAPSED_DEVICE_ON, 0);
-                if (elapsedDeviceOn > 0) {
-                    List<ContentValues> appUsageEntries = new ArrayList<>();
-                    long screenOffTimestamp = System.currentTimeMillis();
-                    long screenOnTimestamp = screenOffTimestamp - elapsedDeviceOn;
+            if (intent.getAction().equals(Screen.ACTION_AWARE_SCREEN_UNLOCKED)) {
+                lastUnlocked = System.currentTimeMillis();
+            }
+            if (intent.getAction().equals(Screen.ACTION_AWARE_SCREEN_LOCKED)) {
+                long screenOffTimestamp = System.currentTimeMillis();
+                long screenOnTimestamp;
+                if (lastUnlocked > 0 && screenOffTimestamp >= lastUnlocked) {
+                    screenOnTimestamp = lastUnlocked;
+                    lastUnlocked = 0;
+                } else {
+                    screenOnTimestamp = initialTimestamp;
+                }
+                List<ContentValues> appUsageEntries = new ArrayList<>();
 //                    List<UsageStats> usageStats = usageStatsManager.queryUsageStats(
 //                            UsageStatsManager.INTERVAL_DAILY, screenOnTimestamp, screenOffTimestamp);
 //                    if (usageStats != null && usageStats.size() > 0) {
@@ -173,47 +185,46 @@ public class ApplicationUsage extends Aware_Sensor {
 //                            }
 //                        }
 //                    }
-                    Map<String, Long> appForegroundDurations = new HashMap<>();
-                    UsageEvents usageEvents = usageStatsManager.queryEvents(screenOnTimestamp, screenOffTimestamp);
-                    UsageEvents.Event event = new UsageEvents.Event();
+                Map<String, Long> appForegroundDurations = new HashMap<>();
+                UsageEvents usageEvents = usageStatsManager.queryEvents(screenOnTimestamp, screenOffTimestamp);
+                UsageEvents.Event event = new UsageEvents.Event();
 
-                    while (usageEvents.hasNextEvent()) {
-                        usageEvents.getNextEvent(event);
-                        // Ignore events outside the time range or for system processes
-                        if (event.getTimeStamp() < screenOnTimestamp || event.getTimeStamp() > screenOffTimestamp) {
-                            continue;
-                        }
-                        String packageName = event.getPackageName();
-                        if (!appForegroundDurations.containsKey(packageName)) {
-                            appForegroundDurations.put(packageName, 0L);
-                        }
-
-                        if (event.getEventType() == UsageEvents.Event.MOVE_TO_FOREGROUND) {
-                            appForegroundDurations.put(packageName + "_start", event.getTimeStamp());
-                        } else if (event.getEventType() == UsageEvents.Event.MOVE_TO_BACKGROUND) {
-                            if (appForegroundDurations.containsKey(packageName + "_start")) {
-                                long foregroundStartTime = appForegroundDurations.get(packageName + "_start");
-                                ContentValues rowData = constructAppUsageEntry(packageName, foregroundStartTime, event.getTimeStamp());
-                                appUsageEntries.add(rowData);
-                                appForegroundDurations.remove(packageName + "_start");
-                            }
-                        }
+                while (usageEvents.hasNextEvent()) {
+                    usageEvents.getNextEvent(event);
+                    // Ignore events outside the time range or for system processes
+                    if (event.getTimeStamp() < screenOnTimestamp || event.getTimeStamp() > screenOffTimestamp) {
+                        continue;
+                    }
+                    String packageName = event.getPackageName();
+                    if (!appForegroundDurations.containsKey(packageName)) {
+                        appForegroundDurations.put(packageName, 0L);
                     }
 
-                    // Edge case where the app is still in the foreground when the interval ends
-                    for (Map.Entry<String, Long> packageEntry : appForegroundDurations.entrySet()) {
-                        if (packageEntry.getKey().endsWith("_start")) {
-                            String packageName = packageEntry.getKey().replace("_start", "");
-                            ContentValues rowData = constructAppUsageEntry(packageName, screenOnTimestamp, screenOffTimestamp);
+                    if (event.getEventType() == UsageEvents.Event.MOVE_TO_FOREGROUND) {
+                        appForegroundDurations.put(packageName + "_start", event.getTimeStamp());
+                    } else if (event.getEventType() == UsageEvents.Event.MOVE_TO_BACKGROUND) {
+                        if (appForegroundDurations.containsKey(packageName + "_start")) {
+                            long foregroundStartTime = appForegroundDurations.get(packageName + "_start");
+                            ContentValues rowData = constructAppUsageEntry(packageName, foregroundStartTime, event.getTimeStamp());
                             appUsageEntries.add(rowData);
+                            appForegroundDurations.remove(packageName + "_start");
                         }
                     }
+                }
 
-                    if (appUsageEntries.size() > 0) {
-                        ContentValues[] contentValuesArray = new ContentValues[appUsageEntries.size()];
-                        contentValuesArray = appUsageEntries.toArray(contentValuesArray);
-                        getContentResolver().bulkInsert(ApplicationUsageStats.CONTENT_URI, contentValuesArray);
+                // Edge case where the app is still in the foreground when the interval ends
+                for (Map.Entry<String, Long> packageEntry : appForegroundDurations.entrySet()) {
+                    if (packageEntry.getKey().endsWith("_start")) {
+                        String packageName = packageEntry.getKey().replace("_start", "");
+                        ContentValues rowData = constructAppUsageEntry(packageName, screenOnTimestamp, screenOffTimestamp);
+                        appUsageEntries.add(rowData);
                     }
+                }
+
+                if (appUsageEntries.size() > 0) {
+                    ContentValues[] contentValuesArray = new ContentValues[appUsageEntries.size()];
+                    contentValuesArray = appUsageEntries.toArray(contentValuesArray);
+                    getContentResolver().bulkInsert(ApplicationUsageStats.CONTENT_URI, contentValuesArray);
                 }
             }
         }
