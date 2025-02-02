@@ -34,9 +34,9 @@ public class ESM_Scale extends ESM_Question {
     public static final String esm_scale_step = "esm_scale_step";
     public static final String esm_scale_start = "esm_scale_start";
 
-    private static TextView current_slider_value;
+    private TextView current_slider_value;
 
-    private static SeekBar seekBar;
+    private SeekBar seekBar;
 
     private Integer min_value;;
 
@@ -128,17 +128,6 @@ public class ESM_Scale extends ESM_Question {
     @Override
     public void onViewCreated(@NonNull View view, Bundle savedInstanceState) {
         super.onViewCreated(view, savedInstanceState);
-        // Observe changes on ViewModel and reflect them on seekbar and slider value
-        sharedViewModel.getStoredData(getID()).observe(getViewLifecycleOwner(), value -> {
-            if (value != null) {
-                Integer savedScale = (Integer) value;
-                selected_scale_progress = savedScale;
-                seekBar = (SeekBar) view.findViewById(R.id.esm_scale);
-                seekBar.setProgress((selected_scale_progress - min_value) / step_size);
-                current_slider_value = (TextView) view.findViewById(R.id.esm_slider_value);
-                current_slider_value.setText(String.valueOf(selected_scale_progress));
-            }
-        });
 
         try {
             TextView esm_title = (TextView) view.findViewById(R.id.esm_title);
@@ -204,30 +193,48 @@ public class ESM_Scale extends ESM_Question {
         } catch (JSONException e) {
             e.printStackTrace();
         }
+
+        // Observe changes on ViewModel and reflect them on seekbar and slider value
+        sharedViewModel.getStoredData(getID()).observe(getViewLifecycleOwner(), value -> {
+            if (value != null) {
+                Integer savedScale = (Integer) value;
+                selected_scale_progress = savedScale;
+                seekBar = (SeekBar) view.findViewById(R.id.esm_scale);
+                seekBar.setProgress((selected_scale_progress - min_value) / step_size);
+                current_slider_value = (TextView) view.findViewById(R.id.esm_slider_value);
+                current_slider_value.setText(String.valueOf(selected_scale_progress));
+            }
+        });
     }
 
     @Override
     public void saveData() {
-        sharedViewModel.storeData(getID(), selected_scale_progress);
+        if (isAdded()) {
+            sharedViewModel.storeData(getID(), selected_scale_progress);
 
-        ContentValues rowData = new ContentValues();
-        rowData.put(ESM_Provider.ESM_Data.ANSWER_TIMESTAMP, System.currentTimeMillis());
-        rowData.put(ESM_Provider.ESM_Data.ANSWER, selected_scale_progress);
-        rowData.put(ESM_Provider.ESM_Data.STATUS, ESM.STATUS_ANSWERED);
+            ContentValues rowData = new ContentValues();
+            rowData.put(ESM_Provider.ESM_Data.ANSWER_TIMESTAMP, System.currentTimeMillis());
+            rowData.put(ESM_Provider.ESM_Data.ANSWER, selected_scale_progress);
+            rowData.put(ESM_Provider.ESM_Data.STATUS, ESM.STATUS_ANSWERED);
 
-        getContext().getContentResolver().update(ESM_Provider.ESM_Data.CONTENT_URI, rowData, ESM_Provider.ESM_Data._ID + "=" + getID(), null);
+            if (getActivity() != null) {
+                getActivity().getApplicationContext().getContentResolver().update(ESM_Provider.ESM_Data.CONTENT_URI, rowData, ESM_Provider.ESM_Data._ID + "=" + getID(), null);
+            } else {
+                requireContext().getContentResolver().update(ESM_Provider.ESM_Data.CONTENT_URI, rowData, ESM_Provider.ESM_Data._ID + "=" + getID(), null);
+            }
 
-        Intent answer = new Intent(ESM.ACTION_AWARE_ESM_ANSWERED);
-        JSONObject esmJSON = getEsm();
-        try {
-            esmJSON = esmJSON.put(ESM_Provider.ESM_Data._ID, getID());
-        } catch (JSONException e) {
-            throw new RuntimeException(e);
+            Intent answer = new Intent(ESM.ACTION_AWARE_ESM_ANSWERED);
+            JSONObject esmJSON = getEsm();
+            try {
+                esmJSON = esmJSON.put(ESM_Provider.ESM_Data._ID, getID());
+            } catch (JSONException e) {
+                throw new RuntimeException(e);
+            }
+            answer.putExtra(ESM.EXTRA_ESM, esmJSON.toString());
+            answer.putExtra(ESM.EXTRA_ANSWER, rowData.getAsString(ESM_Provider.ESM_Data.ANSWER));
+            getActivity().sendBroadcast(answer);
+
+            if (Aware.DEBUG) Log.d(Aware.TAG, "Answer:" + rowData.toString());
         }
-        answer.putExtra(ESM.EXTRA_ESM, esmJSON.toString());
-        answer.putExtra(ESM.EXTRA_ANSWER, rowData.getAsString(ESM_Provider.ESM_Data.ANSWER));
-        getActivity().sendBroadcast(answer);
-
-        if (Aware.DEBUG) Log.d(Aware.TAG, "Answer:" + rowData.toString());
     }
 }

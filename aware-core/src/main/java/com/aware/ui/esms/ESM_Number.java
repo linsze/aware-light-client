@@ -27,7 +27,7 @@ import org.json.JSONObject;
  * Created by NBerkel on 23/08/16.
  */
 public class ESM_Number extends ESM_Question {
-    private static EditText numberInput;
+    private EditText numberInput;
 
     public ESM_Number() throws JSONException {
         this.setType(ESM.TYPE_ESM_NUMBER);
@@ -47,13 +47,6 @@ public class ESM_Number extends ESM_Question {
     @Override
     public void onViewCreated(@NonNull View view, Bundle savedInstanceState) {
         super.onViewCreated(view, savedInstanceState);
-        // Observe changes on ViewModel and reflect them on input
-        sharedViewModel.getStoredData(getID()).observe(getViewLifecycleOwner(), value -> {
-            if (value != null) {
-                String savedNumber = (String) value;
-                numberInput.setText(savedNumber);
-            }
-        });
 
         try {
             TextView esm_title = (TextView) view.findViewById(R.id.esm_title);
@@ -80,30 +73,44 @@ public class ESM_Number extends ESM_Question {
         } catch (JSONException e) {
             e.printStackTrace();
         }
+
+        // Observe changes on ViewModel and reflect them on input
+        sharedViewModel.getStoredData(getID()).observe(getViewLifecycleOwner(), value -> {
+            if (value != null) {
+                String savedNumber = (String) value;
+                numberInput.setText(savedNumber);
+            }
+        });
     }
 
     @Override
     public void saveData() {
-        sharedViewModel.storeData(getID(), numberInput.getText().toString());
+        if (isAdded()) {
+            sharedViewModel.storeData(getID(), numberInput.getText().toString());
 
-        ContentValues rowData = new ContentValues();
-        rowData.put(ESM_Provider.ESM_Data.ANSWER_TIMESTAMP, System.currentTimeMillis());
-        rowData.put(ESM_Provider.ESM_Data.ANSWER, numberInput.getText().toString());
-        rowData.put(ESM_Provider.ESM_Data.STATUS, ESM.STATUS_ANSWERED);
+            ContentValues rowData = new ContentValues();
+            rowData.put(ESM_Provider.ESM_Data.ANSWER_TIMESTAMP, System.currentTimeMillis());
+            rowData.put(ESM_Provider.ESM_Data.ANSWER, numberInput.getText().toString());
+            rowData.put(ESM_Provider.ESM_Data.STATUS, ESM.STATUS_ANSWERED);
 
-        getActivity().getContentResolver().update(ESM_Provider.ESM_Data.CONTENT_URI, rowData, ESM_Provider.ESM_Data._ID + "=" + getID(), null);
+            if (getActivity() != null) {
+                getActivity().getApplicationContext().getContentResolver().update(ESM_Provider.ESM_Data.CONTENT_URI, rowData, ESM_Provider.ESM_Data._ID + "=" + getID(), null);
+            } else {
+                requireContext().getContentResolver().update(ESM_Provider.ESM_Data.CONTENT_URI, rowData, ESM_Provider.ESM_Data._ID + "=" + getID(), null);
+            }
 
-        Intent answer = new Intent(ESM.ACTION_AWARE_ESM_ANSWERED);
-        JSONObject esmJSON = getEsm();
-        try {
-            esmJSON = esmJSON.put(ESM_Provider.ESM_Data._ID, getID());
-        } catch (JSONException e) {
-            throw new RuntimeException(e);
+            Intent answer = new Intent(ESM.ACTION_AWARE_ESM_ANSWERED);
+            JSONObject esmJSON = getEsm();
+            try {
+                esmJSON = esmJSON.put(ESM_Provider.ESM_Data._ID, getID());
+            } catch (JSONException e) {
+                throw new RuntimeException(e);
+            }
+            answer.putExtra(ESM.EXTRA_ESM, esmJSON.toString());
+            answer.putExtra(ESM.EXTRA_ANSWER, rowData.getAsString(ESM_Provider.ESM_Data.ANSWER));
+            getActivity().sendBroadcast(answer);
+
+            if (Aware.DEBUG) Log.d(Aware.TAG, "Answer:" + rowData.toString());
         }
-        answer.putExtra(ESM.EXTRA_ESM, esmJSON.toString());
-        answer.putExtra(ESM.EXTRA_ANSWER, rowData.getAsString(ESM_Provider.ESM_Data.ANSWER));
-        getActivity().sendBroadcast(answer);
-
-        if (Aware.DEBUG) Log.d(Aware.TAG, "Answer:" + rowData.toString());
     }
 }

@@ -33,9 +33,9 @@ public class ESM_QuickAnswer extends ESM_Question {
 
     public static final String esm_quick_answers = "esm_quick_answers";
 
-    private static String selected_answer;
+    private String selected_answer;
 
-    private static ArrayList<Button> answer_buttons = new ArrayList<>();
+    private ArrayList<Button> answer_buttons = new ArrayList<>();
 
     public ESM_QuickAnswer() throws JSONException {
         this.setType(ESM.TYPE_ESM_QUICK_ANSWERS);
@@ -78,7 +78,7 @@ public class ESM_QuickAnswer extends ESM_Question {
 
     private void updateButtonColors() {
         for (Button btn : answer_buttons) {
-            if (btn.getText() == selected_answer) {
+            if (btn.getText().equals(selected_answer)) {
                 btn.setBackgroundColor(R.color.primary);
                 btn.setTextColor(Color.WHITE);
             } else {
@@ -91,13 +91,6 @@ public class ESM_QuickAnswer extends ESM_Question {
     @Override
     public void onViewCreated(@NonNull View view, Bundle savedInstanceState) {
         super.onViewCreated(view, savedInstanceState);
-        // Observe changes on ViewModel and reflect them on button
-        sharedViewModel.getStoredData(getID()).observe(getViewLifecycleOwner(), value -> {
-            if (value != null) {
-                selected_answer = (String) value;
-                updateButtonColors();
-            }
-        });
 
         try {
             TextView esm_title = (TextView) view.findViewById(R.id.esm_title);
@@ -116,8 +109,11 @@ public class ESM_QuickAnswer extends ESM_Question {
                 answersHolder.setOrientation(LinearLayout.VERTICAL);
             }
 
+            answersHolder.removeAllViews();
+            answer_buttons.clear();
+
             for (int i = 0; i < answers.length(); i++) {
-                Button answer = new Button(getActivity());
+                Button answer = new Button(requireContext());
                 LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.WRAP_CONTENT, 1.0f);
                 //Fixed: buttons now of the same height regardless of content.
                 params.height = WindowManager.LayoutParams.MATCH_PARENT;
@@ -129,8 +125,7 @@ public class ESM_QuickAnswer extends ESM_Question {
                         try {
                             if (getExpirationThreshold() > 0 && expire_monitor != null)
                                 expire_monitor.cancel(true);
-                            selected_answer = (String) answer.getText();
-                            sharedViewModel.storeData(getID(), selected_answer);
+                            sharedViewModel.storeData(getID(), answer.getText().toString());
                             updateButtonColors();
                         } catch (JSONException e) {
                             e.printStackTrace();
@@ -143,30 +138,44 @@ public class ESM_QuickAnswer extends ESM_Question {
         } catch (JSONException e) {
             e.printStackTrace();
         }
+
+        // Observe changes on ViewModel and reflect them on button
+        sharedViewModel.getStoredData(getID()).observe(getViewLifecycleOwner(), value -> {
+            if (value != null) {
+                selected_answer = (String) value;
+                updateButtonColors();
+            }
+        });
     }
 
     @Override
     public void saveData() {
-        sharedViewModel.storeData(getID(), selected_answer);
+        if (isAdded()) {
+            sharedViewModel.storeData(getID(), selected_answer);
 
-        ContentValues rowData = new ContentValues();
-        rowData.put(ESM_Provider.ESM_Data.ANSWER_TIMESTAMP, System.currentTimeMillis());
-        rowData.put(ESM_Provider.ESM_Data.STATUS, ESM.STATUS_ANSWERED);
-        rowData.put(ESM_Provider.ESM_Data.ANSWER, selected_answer);
+            ContentValues rowData = new ContentValues();
+            rowData.put(ESM_Provider.ESM_Data.ANSWER_TIMESTAMP, System.currentTimeMillis());
+            rowData.put(ESM_Provider.ESM_Data.STATUS, ESM.STATUS_ANSWERED);
+            rowData.put(ESM_Provider.ESM_Data.ANSWER, selected_answer);
 
-        getContext().getContentResolver().update(ESM_Provider.ESM_Data.CONTENT_URI, rowData, ESM_Provider.ESM_Data._ID + "=" + getID(), null);
+            if (getActivity() != null) {
+                getActivity().getApplicationContext().getContentResolver().update(ESM_Provider.ESM_Data.CONTENT_URI, rowData, ESM_Provider.ESM_Data._ID + "=" + getID(), null);
+            } else {
+                requireContext().getContentResolver().update(ESM_Provider.ESM_Data.CONTENT_URI, rowData, ESM_Provider.ESM_Data._ID + "=" + getID(), null);
+            }
 
-        Intent answer = new Intent(ESM.ACTION_AWARE_ESM_ANSWERED);
-        JSONObject esmJSON = getEsm();
-        try {
-            esmJSON = esmJSON.put(ESM_Provider.ESM_Data._ID, getID());
-        } catch (JSONException e) {
-            throw new RuntimeException(e);
+            Intent answer = new Intent(ESM.ACTION_AWARE_ESM_ANSWERED);
+            JSONObject esmJSON = getEsm();
+            try {
+                esmJSON = esmJSON.put(ESM_Provider.ESM_Data._ID, getID());
+            } catch (JSONException e) {
+                throw new RuntimeException(e);
+            }
+            answer.putExtra(ESM.EXTRA_ESM, esmJSON.toString());
+            answer.putExtra(ESM.EXTRA_ANSWER, rowData.getAsString(ESM_Provider.ESM_Data.ANSWER));
+            getActivity().sendBroadcast(answer);
+
+            if (Aware.DEBUG) Log.d(Aware.TAG, "Answer:" + rowData.toString());
         }
-        answer.putExtra(ESM.EXTRA_ESM, esmJSON.toString());
-        answer.putExtra(ESM.EXTRA_ANSWER, rowData.getAsString(ESM_Provider.ESM_Data.ANSWER));
-        getActivity().sendBroadcast(answer);
-
-        if (Aware.DEBUG) Log.d(Aware.TAG, "Answer:" + rowData.toString());
     }
 }

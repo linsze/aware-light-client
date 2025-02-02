@@ -10,6 +10,7 @@ import android.widget.Toast;
 import androidx.annotation.NonNull;
 import androidx.fragment.app.Fragment;
 import androidx.fragment.app.FragmentActivity;
+import androidx.fragment.app.FragmentManager;
 import androidx.lifecycle.LiveData;
 import androidx.lifecycle.MutableLiveData;
 import androidx.lifecycle.ViewModel;
@@ -25,6 +26,7 @@ import com.aware.providers.ESM_Provider;
 import com.aware.providers.ESM_Provider.ESM_Data;
 import com.aware.ui.esms.ESMFactory;
 import com.aware.ui.esms.ESM_Question;
+import com.aware.ui.esms.ESM_Summary;
 
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -50,9 +52,9 @@ public class ESM_Queue extends FragmentActivity {
     private static ESMAdapter esmAdapter;
     private SharedViewModel sharedViewModel;
 
-    private Button prevButton;
+    private static Button prevButton;
 
-    private Button nextButton;
+    private static Button nextButton;
 
     private static final ESMFactory esmFactory = new ESMFactory();
 
@@ -101,9 +103,11 @@ public class ESM_Queue extends FragmentActivity {
 
         prevButton.setOnClickListener(v -> {
             int currentItem = viewPager.getCurrentItem();
-            ESM_Question esm = esmQuestions.get(currentItem);
-            if (esm != null) {
-                esm.saveData();
+            if (currentItem < esmQuestions.size()) {
+                ESM_Question esm = esmQuestions.get(currentItem);
+                if (esm != null) {
+                    esm.saveData();
+                }
             }
             if (currentItem > 0) {
                 viewPager.setCurrentItem(currentItem - 1);
@@ -112,13 +116,14 @@ public class ESM_Queue extends FragmentActivity {
 
         nextButton.setOnClickListener(v -> {
             int currentItem = viewPager.getCurrentItem();
-            ESM_Question currentEsm = esmQuestions.get(currentItem);
-            if (currentEsm != null) {
-                currentEsm.saveData();
-            }
-            if (currentItem < esmQuestions.size() - 1) {
-                viewPager.setCurrentItem(currentItem + 1);
-            } else if (currentItem == esmQuestions.size() - 1) {
+            if (currentItem < esmQuestions.size()) {
+                ESM_Question currentEsm = esmQuestions.get(currentItem);
+                if (currentEsm != null) {
+                    currentEsm.saveData();
+                }
+                viewPager.setCurrentItem(currentItem + 1, true);
+            } else if (currentItem == esmQuestions.size()) {
+                // The fragment corresponding to the last summary page is not included in list of ESM Questions
                 Intent submittedEsm = new Intent(ESM.ACTION_AWARE_ESM_SUBMITTED);
                 sendBroadcast(submittedEsm);
             }
@@ -152,14 +157,19 @@ public class ESM_Queue extends FragmentActivity {
 
     private void updateButtonStates(int position) {
         prevButton.setEnabled(position > 0);
-        if (position == esmQuestions.size()-1) {
-            nextButton.setText("Submit");
-        } else {
+        if (position < esmQuestions.size()) {
             nextButton.setText("Next");
+        } else {
+            nextButton.setText("Submit");
         }
     }
 
 
+    /**
+     * Creates a queue of ESM questions that are currently prompted.
+     * Responses to ESM questions that may have additional questions will be updated in real time.
+     * ESM questions with long text type will always be at the end of the queue.
+     */
     public void initializeQueue() {
         try {
             Cursor current_esm;
@@ -202,11 +212,28 @@ public class ESM_Queue extends FragmentActivity {
             }
             if (branched_esm != null && !branched_esm.isClosed()) branched_esm.close();
 
+            // Sort and make sure that ESM question of long text type is always at the end.
+            ArrayList<ESM_Question> tempEsmQuestions = (ArrayList<ESM_Question>) esmQuestions.clone();
+            ArrayList<ESM_Question> freeTextQuestions = new ArrayList<>();
+            ArrayList<JSONObject> freeTextJsons = new ArrayList<>();
+            for (int i = tempEsmQuestions.size() - 1; i >= 0; i--) {
+                ESM_Question esm = tempEsmQuestions.get(i);
+                if (esm.getType() == ESM.TYPE_ESM_TEXT) {
+                    freeTextQuestions.add(esm);
+                    esmQuestions.remove(esm);
+                    freeTextJsons.add(esmJSONList.get(i));
+                    esmJSONList.remove(i);
+                }
+            }
+            if (freeTextQuestions.size() > 0) {
+                esmQuestions.addAll(freeTextQuestions);
+                esmJSONList.addAll(freeTextJsons);
+            }
             esmAdapter.notifyDataSetChanged();
         } catch (JSONException e) {
             e.printStackTrace();
         }
-        if (esmAdapter.getItemCount() == 0) {
+        if (esmQuestions.size() == 0) {
             finish();
         }
     }
@@ -227,6 +254,14 @@ public class ESM_Queue extends FragmentActivity {
                     }
                     runOnUiThread(() -> {
                         Toast.makeText(getApplicationContext(), "Responses submitted", Toast.LENGTH_LONG).show();
+                        // Remove the last summary fragment that was manually added before finishing the fragment activity
+                        FragmentManager fragmentManager = getSupportFragmentManager();
+                        Fragment summaryFragment = fragmentManager.findFragmentByTag("ESM_Summary");
+                        if (summaryFragment != null) {
+                            fragmentManager.beginTransaction()
+                                    .remove(summaryFragment)
+                                    .commit();
+                        }
                         finish();
                     });
                 });
@@ -298,6 +333,7 @@ public class ESM_Queue extends FragmentActivity {
      */
     public static class SharedViewModel extends ViewModel {
         private Map<Integer, MutableLiveData<Object>> esmData = new HashMap<>();
+        private final MutableLiveData<Map<Integer, Object>> allAnswers = new MutableLiveData<>(new HashMap<>());
         public SharedViewModel() {}
 
         public void storeData(Integer key, Object data) {
@@ -307,6 +343,13 @@ public class ESM_Queue extends FragmentActivity {
                 esmData.put(key, liveData);
             }
             liveData.setValue(data);
+
+            Map<Integer, Object> currentAnswers = allAnswers.getValue();
+            if (currentAnswers == null) {
+                currentAnswers = new HashMap<>();
+            }
+            currentAnswers.put(key, data);
+            allAnswers.setValue(currentAnswers);
         }
 
         public LiveData<Object> getStoredData(Integer key) {
@@ -314,6 +357,10 @@ public class ESM_Queue extends FragmentActivity {
                 esmData.put(key, new MutableLiveData<>());
             }
             return esmData.get(key);
+        }
+
+        public LiveData<Map<Integer, Object>> getAllAnswers() {
+            return allAnswers;
         }
     }
 
@@ -323,7 +370,6 @@ public class ESM_Queue extends FragmentActivity {
 
     public class ESMAdapter extends FragmentStateAdapter {
         private ArrayList<ESM_Question> esmQuestions;
-
         public ESMAdapter(@NonNull FragmentActivity fragmentActivity, ArrayList<ESM_Question> esmQuestions) {
             super(fragmentActivity);
             this.esmQuestions = esmQuestions;
@@ -332,12 +378,43 @@ public class ESM_Queue extends FragmentActivity {
         @NonNull
         @Override
         public Fragment createFragment(int position) {
-            return esmQuestions.get(position);
+            if (position < esmQuestions.size()) {
+                return esmQuestions.get(position);
+            } else {
+                // Summary fragment with a tag to be removed manually later on
+                ESM_Summary summaryFragment = new ESM_Summary(esmQuestions);
+                Bundle args = new Bundle();
+                args.putString("TAG", "ESM_Summary");
+                summaryFragment.setArguments(args);
+                return summaryFragment;
+            }
         }
 
         @Override
         public int getItemCount() {
-            return esmQuestions.size();
+            // Consider the summary fragment to allow navigation
+            return esmQuestions.size() + 1;
+        }
+
+        // Ensure fragments have unique IDs to avoid Fragment already added error due to duplication
+        @Override
+        public long getItemId(int position) {
+            if (position < esmQuestions.size()) {
+                return esmQuestions.get(position).getID();
+            } else {
+                // ID for summary fragment
+                return Long.MAX_VALUE;
+            }
+        }
+
+        // Avoid recreation if fragment remains the same
+        @Override
+        public boolean containsItem(long itemId) {
+            if (itemId == Long.MAX_VALUE) return false;
+            for (ESM_Question q : esmQuestions) {
+                if (q.getID() == itemId) return true;
+            }
+            return false;
         }
     }
 }
