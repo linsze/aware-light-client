@@ -1,6 +1,7 @@
 package com.aware.phone.ui;
 
 import static com.aware.Aware.TAG;
+import static com.aware.Aware.isESMActive;
 import static com.aware.Aware_Preferences.DEFAULT_FREQUENCIES_AND_THRESHOLDS;
 import static com.aware.utils.PermissionUtils.MULTIPLE_PREFERENCES_UPDATED;
 import static com.aware.utils.PermissionUtils.PREFERENCE_UPDATE_DISPLAY;
@@ -105,6 +106,11 @@ public class Settings_Page extends Aware_Activity {
         registerReceiver(deniedPermissionsReceiver, deniedPermissionsResults);
 
         Aware.setSetting(getApplicationContext(), Aware_Preferences.BULK_SERVICE_ACTIVATION, true);
+
+        // Make sure that ESM is active to enable questionnaire initiation
+        if (!isESMActive()) {
+            Aware.startESM(getApplicationContext());
+        }
     }
 
     /**

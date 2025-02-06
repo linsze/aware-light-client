@@ -60,6 +60,7 @@ public class ESM_Provider extends ContentProvider {
         public static final String ANSWER_TIMESTAMP = "double_esm_user_answer_timestamp";
         public static final String ANSWER = "esm_user_answer";
         public static final String TRIGGER = "esm_trigger";
+        public static final String DATE = "esm_date";
     }
 
     public static String DATABASE_NAME = "esms.db";
@@ -75,7 +76,8 @@ public class ESM_Provider extends ContentProvider {
                     + ESM_Data.NOTIFICATION_TIMEOUT + " integer default 0,"
                     + ESM_Data.ANSWER_TIMESTAMP + " real default 0,"
                     + ESM_Data.ANSWER + " text default '',"
-                    + ESM_Data.TRIGGER + " text default ''"
+                    + ESM_Data.TRIGGER + " text default '',"
+                    + ESM_Data.DATE + " text default ''"
     };
 
     private UriMatcher sUriMatcher = null;
@@ -193,6 +195,7 @@ public class ESM_Provider extends ContentProvider {
         questionsMap.put(ESM_Data.ANSWER, ESM_Data.ANSWER);
         questionsMap.put(ESM_Data.NOTIFICATION_TIMEOUT, ESM_Data.NOTIFICATION_TIMEOUT);
         questionsMap.put(ESM_Data.TRIGGER, ESM_Data.TRIGGER);
+        questionsMap.put(ESM_Data.DATE, ESM_Data.DATE);
 
         return true;
     }

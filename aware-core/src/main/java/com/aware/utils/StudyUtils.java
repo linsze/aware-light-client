@@ -492,9 +492,18 @@ public class StudyUtils extends IntentService {
                 esmsArray.getJSONObject(i).getJSONObject("esm").put(ESM_Question.esm_trigger, title);
             }
 
+            String esmSchedules = Aware.getSetting(context, Aware_Preferences.ESM_SCHEDULES);
+            JSONObject esmScheduleJson = new JSONObject();
+            if (!esmSchedules.equals("")) {
+                esmScheduleJson = new JSONObject(esmSchedules);
+            }
+            esmScheduleJson.put(title, esmsArray.toString());
+            Aware.setSetting(context, Aware_Preferences.ESM_SCHEDULES, esmScheduleJson);
+
             schedule.setActionType(Scheduler.ACTION_TYPE_BROADCAST)
                     .setActionIntentAction(ESM.ACTION_AWARE_QUEUE_ESM)
-                    .addActionExtra(ESM.EXTRA_ESM, esmsArray.toString());
+                    .addActionExtra(ESM.EXTRA_ESM, esmsArray.toString())
+                    .addActionExtra(ESM.ESM_TIMING, scheduleJson.getString("hours"));
             Scheduler.saveSchedule(context, schedule);
         } catch (JSONException e) {
             e.printStackTrace();

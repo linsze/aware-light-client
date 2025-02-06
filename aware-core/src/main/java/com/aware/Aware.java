@@ -2601,6 +2601,13 @@ public class Aware extends Service {
         return (applicationUsageSrv != null);
     }
 
+    /**
+     * Used to check if the current ESM service is active.
+     */
+    public static boolean isESMActive() {
+        return (esmSrv != null);
+    }
+
     public static void startPlugins(Context context) {
         try {
             if (context.getApplicationContext().getPackageName().equalsIgnoreCase("com.aware.phone") || context.getApplicationContext().getResources().getBoolean(R.bool.standalone)) {

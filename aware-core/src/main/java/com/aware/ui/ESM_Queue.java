@@ -188,6 +188,7 @@ public class ESM_Queue extends FragmentActivity {
                     esm_question = esm_question.put(ESM_Data._ID, current_esm.getInt(current_esm.getColumnIndex(ESM_Data._ID)));
                     esmJSONList.add(esm_question);
                     ESM_Question esmQuestion = esmFactory.getESM(esm_question.getInt(ESM_Question.esm_type), esm_question, current_esm.getInt(current_esm.getColumnIndex(ESM_Data._ID)));
+                    esmQuestion.setDate(current_esm.getString(current_esm.getColumnIndex(ESM_Data.DATE)));
                     esmQuestions.add(esmQuestion);
                 } while (current_esm.moveToNext());
             }

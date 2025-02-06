@@ -130,6 +130,12 @@ public class ESM_Scale extends ESM_Question {
         super.onViewCreated(view, savedInstanceState);
 
         try {
+            TextView esm_date = (TextView) view.findViewById(R.id.esm_date);
+            String esm_date_string = this.getDateString();
+            if (!esm_date_string.equals("")) {
+                esm_date.setText("On " + esm_date_string + ":");
+            }
+
             TextView esm_title = (TextView) view.findViewById(R.id.esm_title);
             esm_title.setText(getTitle());
             esm_title.setMovementMethod(ScrollingMovementMethod.getInstance());
@@ -227,12 +233,13 @@ public class ESM_Scale extends ESM_Question {
             JSONObject esmJSON = getEsm();
             try {
                 esmJSON = esmJSON.put(ESM_Provider.ESM_Data._ID, getID());
+                answer.putExtra(ESM.EXTRA_ESM, esmJSON.toString());
+                answer.putExtra(ESM.EXTRA_ANSWER, rowData.getAsString(ESM_Provider.ESM_Data.ANSWER));
+                answer.putExtra(ESM.EXTRA_DATE, getDate());
+                getActivity().sendBroadcast(answer);
             } catch (JSONException e) {
                 throw new RuntimeException(e);
             }
-            answer.putExtra(ESM.EXTRA_ESM, esmJSON.toString());
-            answer.putExtra(ESM.EXTRA_ANSWER, rowData.getAsString(ESM_Provider.ESM_Data.ANSWER));
-            getActivity().sendBroadcast(answer);
 
             if (Aware.DEBUG) Log.d(Aware.TAG, "Answer:" + rowData.toString());
         }

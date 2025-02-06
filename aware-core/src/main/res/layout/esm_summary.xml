@@ -10,14 +10,25 @@
         android:layout_height="wrap_content"
         android:scrollbars="vertical"
         android:padding="16dp"
+        android:paddingBottom="0dp"
         android:textSize="18sp"
         android:textStyle="normal|bold"
         android:text="Questionnaire Responses" />
 
+    <TextView
+        android:id="@+id/esm_date"
+        android:layout_width="fill_parent"
+        android:layout_height="wrap_content"
+        android:scrollbars="vertical"
+        android:paddingHorizontal="16dp"
+        android:textSize="16sp"
+        android:textStyle="italic|bold"
+        android:layout_below="@id/esm_title"/>
+
     <ScrollView
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:layout_below="@id/esm_title"
+        android:layout_below="@id/esm_date"
         android:padding="16dp">
 
         <LinearLayout

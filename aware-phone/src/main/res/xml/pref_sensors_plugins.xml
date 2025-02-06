@@ -250,6 +250,12 @@ Refer to pref_aware_light.xml for all other components.
         </PreferenceScreen>
     </PreferenceCategory>
     <PreferenceCategory
+        android:key="questionnaire_pref"
+        android:title="Questionnaires">
+        <com.aware.phone.ui.prefs.QuestionnairePref
+            android:key="questionnaires"/>
+    </PreferenceCategory>
+    <PreferenceCategory
         android:key="device_ids"
         android:title="Device">
         <EditTextPreference

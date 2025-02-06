@@ -27,6 +27,8 @@ import java.util.HashMap;
  */
 public class ESM_Summary extends ESM_Question {
     private TextView summaryText;
+
+    private TextView esmDate;
     private ArrayList<ESM_Question> esmQuestions;
 
     public ESM_Summary(ArrayList<ESM_Question> esmQuestions) {
@@ -46,14 +48,21 @@ public class ESM_Summary extends ESM_Question {
         summaryText = view.findViewById(R.id.summary_text);
         summaryText.setMovementMethod(new ScrollingMovementMethod());
 
+        esmDate = (TextView) view.findViewById(R.id.esm_date);
+
         sharedViewModel.getAllAnswers().observe(getViewLifecycleOwner(), answers -> {
             SpannableStringBuilder spannableSummary = new SpannableStringBuilder();
+            String esmDateString = "";
             try {
                 for (ESM_Question esm: esmQuestions) {
                     Integer esmID = esm.getID();
                     Object answer = answers.get(esmID);
                     if (answer != null) {
                         String titleText = esm.getTitle();
+                        String currentDate = esm.getDateString();
+                        if (!currentDate.equals("")) {
+                            esmDateString = currentDate;
+                        }
                         SpannableString titleSpannable = new SpannableString(titleText);
                         titleSpannable.setSpan(new StyleSpan(Typeface.BOLD), 0, titleText.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
                         spannableSummary.append(titleSpannable);
@@ -67,6 +76,11 @@ public class ESM_Summary extends ESM_Question {
 
                 }
                 summaryText.setText(spannableSummary);
+
+                if (!esmDateString.equals("")) {
+                    esmDate.setText(esmDateString);
+                }
+
             } catch (JSONException e) {
                 e.printStackTrace();
             }

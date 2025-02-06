@@ -43,6 +43,8 @@
     <string name="foreground_notification_title">AWARE</string>
     <string name="foreground_notification_text">Data collection active</string>
     <string name="foreground_notification_sync_text">Sync</string>
+    <string name="day_questionnaire">Day questionnaire</string>
+    <string name="evening_questionnaire">Evening questionnaire</string>
 
     <string name="sensor_screentext">ScreenText</string>
     <string name="sensor_accelerometer">Accelerometer</string>

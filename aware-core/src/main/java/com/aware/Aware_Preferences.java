@@ -801,6 +801,11 @@ public class Aware_Preferences {
     public static final String REDIRECTED_PERMISSIONS = "redirected_permissions";
 
     /**
+     * Store ESM schedules to allow self-initiated of questionnaire answering.
+     */
+    public static final String ESM_SCHEDULES = "esm_schedules";
+
+    /**
      * List of default values for currently used preference frequencies and thresholds.
      */
     public static final HashMap<String, String> DEFAULT_FREQUENCIES_AND_THRESHOLDS = new HashMap<String, String>(){{
