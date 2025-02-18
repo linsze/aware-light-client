@@ -27,6 +27,7 @@ import com.aware.Aware_Preferences;
 import com.aware.ESM;
 import com.aware.R;
 import com.aware.providers.Aware_Provider;
+import com.aware.providers.ESM_Provider;
 import com.aware.ui.esms.ESM_Question;
 
 import org.json.JSONArray;
@@ -489,7 +490,16 @@ public class StudyUtils extends IntentService {
 
             // Set trigger for ESMs as the schedule's title
             for (int i = 0; i < esmsArray.length(); i ++) {
-                esmsArray.getJSONObject(i).getJSONObject("esm").put(ESM_Question.esm_trigger, title);
+                JSONObject esm = esmsArray.getJSONObject(i).getJSONObject("esm");
+                esm.put(ESM_Question.esm_trigger, title);
+                if (esm.has(ESM_Question.esm_flows)) {
+                    JSONArray esmFlows = esm.getJSONArray(ESM_Question.esm_flows);
+                    for (int k = 0; k < esmFlows.length(); k++) {
+                        JSONObject flow = esmFlows.getJSONObject(k);
+                        JSONObject nextESM = flow.getJSONObject(ESM_Question.flow_next_esm).getJSONObject(ESM.EXTRA_ESM);
+                        nextESM.put(ESM_Question.esm_trigger, title);
+                    }
+                }
             }
 
             String esmSchedules = Aware.getSetting(context, Aware_Preferences.ESM_SCHEDULES);
@@ -503,7 +513,8 @@ public class StudyUtils extends IntentService {
             schedule.setActionType(Scheduler.ACTION_TYPE_BROADCAST)
                     .setActionIntentAction(ESM.ACTION_AWARE_QUEUE_ESM)
                     .addActionExtra(ESM.EXTRA_ESM, esmsArray.toString())
-                    .addActionExtra(ESM.ESM_TIMING, scheduleJson.getString("hours"));
+                    .addActionExtra(ESM.EXTRA_TIMING, scheduleJson.getString("hours"))
+                    .addActionExtra(ESM.EXTRA_SCHEDULE, title);
             Scheduler.saveSchedule(context, schedule);
         } catch (JSONException e) {
             e.printStackTrace();
@@ -683,11 +694,11 @@ public class StudyUtils extends IntentService {
         try {
             JSONObject dbInfo = config.getJSONObject("database");
             return Jdbc.testConnection(dbInfo.getString("database_host"),
-                    dbInfo.getString("database_port"), dbInfo.getString("database_name"),
-                    dbInfo.getString("database_username"), dbInfo.getString("database_password"),
-                    dbInfo.getBoolean("config_without_password"),
-                    input_password);
-        } catch (JSONException e) {
+                dbInfo.getString("database_port"), dbInfo.getString("database_name"),
+                dbInfo.getString("database_username"), dbInfo.getString("database_password"),
+                dbInfo.getBoolean("config_without_password"),
+                input_password);
+    } catch (JSONException e) {
             return false;
         }
     }

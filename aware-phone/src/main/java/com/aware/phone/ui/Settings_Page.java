@@ -109,7 +109,7 @@ public class Settings_Page extends Aware_Activity {
 
         // Make sure that ESM is active to enable questionnaire initiation
         if (!isESMActive()) {
-            Aware.startESM(getApplicationContext());
+            Aware.startAWARE(getApplicationContext(), true);
         }
     }
 

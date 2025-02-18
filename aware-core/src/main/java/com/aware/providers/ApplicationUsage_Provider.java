@@ -62,7 +62,7 @@ public class ApplicationUsage_Provider extends ContentProvider {
             ApplicationUsage_Provider.ApplicationUsageStats._ID + " integer primary key autoincrement,"
                     + ApplicationUsage_Provider.ApplicationUsageStats.TIMESTAMP + " real default 0,"
                     + ApplicationUsage_Provider.ApplicationUsageStats.START_TIMESTAMP + " real default 0,"
-                    + ApplicationUsage_Provider.ApplicationUsageStats.END_TIMESTAMP + " real default 0,"
+                    + ApplicationUsage_Provider.ApplicationUsageStats.END_TIMESTAMP + " real default 1,"
                     + ApplicationUsage_Provider.ApplicationUsageStats.FOREGROUND_DURATION + " real default 0,"
                     + ApplicationUsage_Provider.ApplicationUsageStats.DEVICE_ID + " text default '',"
                     + ApplicationUsage_Provider.ApplicationUsageStats.PACKAGE_NAME + " text default '',"

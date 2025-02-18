@@ -238,14 +238,22 @@ public class ESM extends Aware_Sensor {
     /**
      * Stringified JSONArray of schedule timing to be used for ESM prompts
      */
-    public static final String ESM_TIMING = "esm_timing";
+    public static final String EXTRA_TIMING = "esm_timing";
 
     /**
-     * Extra for ACTION_AWARE_ESM_ANSWERED as String
+     * Extra of ESM answer for ACTION_AWARE_ESM_ANSWERED
      */
     public static final String EXTRA_ANSWER = "answer";
 
-    public static final String EXTRA_DATE = "date";
+    /**
+     * Extra of ESM answer for ACTION_AWARE_ESM_ANSWERED
+     */
+    public static final String EXTRA_DATE = "esm_date";
+
+    /**
+     * Extra of ESM schedule title for ACTION_AWARE_QUEUE_ESM
+     */
+    public static final String EXTRA_SCHEDULE = "esm_schedule";
 
     public static final int ESM_NOTIFICATION_ID = 777;
 
@@ -305,7 +313,7 @@ public class ESM extends Aware_Sensor {
 
             if (Aware.getSetting(getApplicationContext(), Aware_Preferences.STATUS_ESM).equals("true")) {
                 if (isESMWaiting(getApplicationContext()) && !isESMVisible(getApplicationContext())) {
-                    notifyESM(getApplicationContext(), true);
+                    notifyESM(getApplicationContext(), "", "", true);
                 }
             }
 
@@ -373,7 +381,7 @@ public class ESM extends Aware_Sensor {
      * @param queue
      */
     public static void queueESM(Context context, String queue) {
-        queueESM(context, queue, "", false);
+        queueESM(context, queue, "", "", false);
     }
 
     /**
@@ -382,7 +390,7 @@ public class ESM extends Aware_Sensor {
      * @param context
      * @param queue
      */
-    public static void queueESM(Context context, String queue, String queueTiming, boolean isTrial) {
+    public static void queueESM(Context context, String queue, String queueTiming, String queueTitle, boolean isTrial) {
         try {
             JSONArray esms = new JSONArray(queue);
 
@@ -406,6 +414,7 @@ public class ESM extends Aware_Sensor {
 
             for (int i = 0; i < esms.length(); i++) {
                 JSONObject esm = esms.getJSONObject(i).getJSONObject(EXTRA_ESM);
+                boolean esmAnswered = false;
 
                 if (i == 0) { // we check the first ESM item in the queue to see whether any current queue items need to be removed
                     if (esm.optBoolean("esm_replace_queue")) { // clear current queue
@@ -433,7 +442,7 @@ public class ESM extends Aware_Sensor {
 
                 // Doesn't prompt answering if ESM for the day has been answered manually
                 Cursor answeredEsm = context.getContentResolver().query(ESM_Provider.ESM_Data.CONTENT_URI,null,
-                        ESM_Provider.ESM_Data.JSON + " LIKE ? AND " + ESM_Provider.ESM_Data.STATUS + "=" + ESM.STATUS_SUBMITTED + " AND " + ESM_Provider.ESM_Data.DATE + "='" + queueDate + "'",
+                        ESM_Provider.ESM_Data.JSON + " LIKE ? AND " + ESM_Provider.ESM_Data.DATE + "='" + queueDate + "'",
                         new String[]{"%" + esm.toString() + "%"}, ESM_Provider.ESM_Data.TIMESTAMP + " DESC");
                 int existingEsmId = -1;
                 if (answeredEsm != null && answeredEsm.moveToFirst()) {
@@ -441,30 +450,38 @@ public class ESM extends Aware_Sensor {
                         String existingEsm = answeredEsm.getString(answeredEsm.getColumnIndex(ESM_Provider.ESM_Data.JSON));
                         if (existingEsm.equals(esm.toString())) {
                             existingEsmId = answeredEsm.getInt(answeredEsm.getColumnIndex(ESM_Provider.ESM_Data._ID));
+                            // Consider states other than submitted ones to prevent duplicated questions
+                            if (answeredEsm.getInt(answeredEsm.getColumnIndex(ESM_Provider.ESM_Data.STATUS)) == ESM.STATUS_SUBMITTED) {
+                                esmAnswered = true;
+                            }
                             break;
                         }
                     } while (answeredEsm.moveToNext());
                 }
                 if (answeredEsm != null && !answeredEsm.isClosed()) answeredEsm.close();
 
-                if (existingEsmId == -1) {
-                    esm_not_answered = true;
-                    ContentValues rowData = new ContentValues();
-                    rowData.put(ESM_Data.TIMESTAMP, esm_timestamp + i); //fix issue with synching and support ordering
-                    rowData.put(ESM_Data.DEVICE_ID, Aware.getSetting(context, Aware_Preferences.DEVICE_ID));
-                    rowData.put(ESM_Data.JSON, esm.toString());
-                    rowData.put(ESM_Data.EXPIRATION_THRESHOLD, esm.optInt(ESM_Data.EXPIRATION_THRESHOLD)); //optional, defaults to 0
-                    rowData.put(ESM_Data.NOTIFICATION_TIMEOUT, esm.optInt(ESM_Data.NOTIFICATION_TIMEOUT)); //optional, defaults to 0
-                    rowData.put(ESM_Data.STATUS, ESM.STATUS_NEW);
-                    rowData.put(ESM_Data.TRIGGER, isTrial ? "TRIAL" : esm.optString(ESM_Data.TRIGGER)); //we use this TRIAL trigger to remove trials from database at the end of the trial
-                    rowData.put(ESM_Data.DATE, queueDate);
+                ContentValues rowData = new ContentValues();
+                rowData.put(ESM_Data.TIMESTAMP, esm_timestamp + i); //fix issue with synching and support ordering
+                rowData.put(ESM_Data.DEVICE_ID, Aware.getSetting(context, Aware_Preferences.DEVICE_ID));
+                rowData.put(ESM_Data.JSON, esm.toString());
+                rowData.put(ESM_Data.EXPIRATION_THRESHOLD, esm.optInt(ESM_Data.EXPIRATION_THRESHOLD)); //optional, defaults to 0
+                rowData.put(ESM_Data.NOTIFICATION_TIMEOUT, esm.optInt(ESM_Data.NOTIFICATION_TIMEOUT)); //optional, defaults to 0
+                rowData.put(ESM_Data.STATUS, ESM.STATUS_NEW);
+                rowData.put(ESM_Data.TRIGGER, isTrial ? "TRIAL" : esm.optString(ESM_Data.TRIGGER)); //we use this TRIAL trigger to remove trials from database at the end of the trial
+                rowData.put(ESM_Data.DATE, queueDate);
 
+                if (existingEsmId == -1 || (existingEsmId != -1 && !esmAnswered)) {
+                    esm_not_answered = true;
                     if (i == 0 && (rowData.getAsInteger(ESM_Data.EXPIRATION_THRESHOLD) == 0 || rowData.getAsInteger(ESM_Data.NOTIFICATION_TIMEOUT) > 0)) {
                         is_persistent = true;
                     }
-
                     try {
-                        context.getContentResolver().insert(ESM_Data.CONTENT_URI, rowData);
+                        if (existingEsmId == -1) {
+                            context.getContentResolver().insert(ESM_Data.CONTENT_URI, rowData);
+                        } else {
+                            // Update if ESM entry already exists
+                            context.getContentResolver().update(ESM_Provider.ESM_Data.CONTENT_URI, rowData, ESM_Provider.ESM_Data._ID + "=" + existingEsmId, null);
+                        }
                         if (Aware.DEBUG) Log.d(TAG, "ESM: " + rowData.toString());
                     } catch (SQLiteException e) {
                         if (Aware.DEBUG) Log.d(TAG, e.getMessage());
@@ -491,10 +508,12 @@ public class ESM extends Aware_Sensor {
                     if (pendingESM != null && !pendingESM.isClosed()) pendingESM.close();
 
                     //Show notification
-                    notifyESM(context, true);
+                    notifyESM(context, queueDate, queueTitle, true);
 
                 } else { //show ESM immediately
                     Intent intent_ESM = new Intent(context, ESM_Queue.class);
+                    intent_ESM.putExtra(ESM.EXTRA_DATE, queueDate);
+                    intent_ESM.putExtra(ESM.EXTRA_SCHEDULE, queueTitle);
                     intent_ESM.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
                     context.startActivity(intent_ESM);
                 }
@@ -509,7 +528,7 @@ public class ESM extends Aware_Sensor {
      *
      * @param context
      */
-    public static void notifyESM(Context context, boolean notifyOnce) {
+    public static void notifyESM(Context context, String queueDate, String queueTitle, boolean notifyOnce) {
 
         NotificationCompat.Builder mBuilder = new NotificationCompat.Builder(context, Aware.AWARE_NOTIFICATION_CHANNEL_GENERAL);
         mBuilder.setSmallIcon(R.drawable.ic_stat_aware_esm);
@@ -526,6 +545,8 @@ public class ESM extends Aware_Sensor {
             mBuilder.setChannelId(Aware.AWARE_NOTIFICATION_CHANNEL_GENERAL);
 
         Intent intent_ESM = new Intent(context, ESM_Queue.class);
+        intent_ESM.putExtra(ESM.EXTRA_DATE, queueDate);
+        intent_ESM.putExtra(ESM.EXTRA_SCHEDULE, queueTitle);
         intent_ESM.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
 
         PendingIntent pending_ESM = PendingIntent.getActivity(context, 0, intent_ESM, PendingIntent.FLAG_UPDATE_CURRENT);
@@ -569,7 +590,7 @@ public class ESM extends Aware_Sensor {
                     mRetries--;
                     display_timestamp = System.currentTimeMillis(); //move forward time and try again
                     if (Aware.DEBUG) Log.d(TAG, "Retrying ESM: " + mRetries);
-                    notifyESM(mContext, false);
+                    notifyESM(mContext, "", "", false);
                 }
             }
 
@@ -620,15 +641,19 @@ public class ESM extends Aware_Sensor {
                     Log.d(ESM.TAG, context.getPackageName() + " will handle ESM");
 
                 if (intent.getAction().equals(ESM.ACTION_AWARE_TRY_ESM)) {
-                    queueESM(context, intent.getStringExtra(ESM.EXTRA_ESM), "", true);
+                    queueESM(context, intent.getStringExtra(ESM.EXTRA_ESM), "", "", true);
                 }
 
                 if (intent.getAction().equals(ESM.ACTION_AWARE_QUEUE_ESM)) {
-                    String esmTiming = intent.getStringExtra(ESM.ESM_TIMING);
+                    String esmTiming = intent.getStringExtra(ESM.EXTRA_TIMING);
                     if (esmTiming == null) {
                         esmTiming = "";
                     }
-                    queueESM(context, intent.getStringExtra(ESM.EXTRA_ESM), esmTiming, false);
+                    String esmScheduleTitle = intent.getStringExtra(ESM.EXTRA_SCHEDULE);
+                    if (esmScheduleTitle == null) {
+                        esmScheduleTitle = "";
+                    }
+                    queueESM(context, intent.getStringExtra(ESM.EXTRA_ESM), esmTiming, esmScheduleTitle, false);
                 }
 
                 if (intent.getAction().equals(ESM.ACTION_AWARE_ESM_ANSWERED)) {

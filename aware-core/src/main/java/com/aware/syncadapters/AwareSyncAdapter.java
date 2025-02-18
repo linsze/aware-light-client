@@ -590,7 +590,7 @@ public class AwareSyncAdapter extends AbstractThreadedSyncAdapter {
                 String[] columns = context_data.getColumnNames();
                 for (String c_name : columns) {
                     if (c_name.equals("_id")) continue; //Skip local database ID
-                    if (c_name.equals("timestamp") || c_name.contains("double")) {
+                    if (c_name.contains("timestamp") || c_name.contains("double")) {
                         row.put(c_name, context_data.getDouble(context_data.getColumnIndex(c_name)));
                     } else if (c_name.contains("float")) {
                         row.put(c_name, context_data.getFloat(context_data.getColumnIndex(c_name)));

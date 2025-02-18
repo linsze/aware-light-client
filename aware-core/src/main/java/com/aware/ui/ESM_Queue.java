@@ -60,9 +60,25 @@ public class ESM_Queue extends FragmentActivity {
 
     private static ViewPager2 viewPager;
 
+    private static String queueDate = "";
+
+    private static String queueTitle = "";
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+
+        // Retrieve queue date passed through the intent
+        queueDate = getIntent().getStringExtra(ESM.EXTRA_DATE);
+        if (queueDate == null) {
+            queueDate = "";
+        }
+
+        // Retrieve queue title passed through the intent
+        queueTitle = getIntent().getStringExtra(ESM.EXTRA_SCHEDULE);
+        if (queueTitle == null) {
+            queueTitle = "";
+        }
 
         //Clear notification if it exists, since we are going through the ESMs
         NotificationManager manager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
@@ -150,7 +166,7 @@ public class ESM_Queue extends FragmentActivity {
                     throw new RuntimeException(e);
                 }
             }
-            ESM.notifyESM(getApplicationContext(), true);
+            ESM.notifyESM(getApplicationContext(), queueDate, queueTitle, true);
             finish();
         }
     }
@@ -173,7 +189,14 @@ public class ESM_Queue extends FragmentActivity {
     public void initializeQueue() {
         try {
             Cursor current_esm;
-            current_esm = getContentResolver().query(ESM_Data.CONTENT_URI, null, ESM_Data.STATUS + "=" + ESM.STATUS_NEW, null, ESM_Data.TIMESTAMP + " ASC");
+            String querySelection = ESM_Data.STATUS + "=" + ESM.STATUS_NEW;
+            if (!queueDate.equals("")) {
+                querySelection += " AND " + ESM_Data.DATE + "='" + queueDate + "'";
+            }
+            if (!queueTitle.equals("")) {
+                querySelection += " AND " + ESM_Data.TRIGGER + "='" + queueTitle + "'";
+            }
+            current_esm = getContentResolver().query(ESM_Data.CONTENT_URI, null, querySelection, null, ESM_Data._ID + " ASC");
             if (current_esm != null && current_esm.moveToFirst()) {
                 do {
                     int _id = current_esm.getInt(current_esm.getColumnIndex(ESM_Data._ID));
