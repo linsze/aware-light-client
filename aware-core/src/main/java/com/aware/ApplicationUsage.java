@@ -200,9 +200,21 @@ public class ApplicationUsage extends Aware_Sensor {
                         appForegroundDurations.put(packageName, 0L);
                     }
 
-                    if (event.getEventType() == UsageEvents.Event.MOVE_TO_FOREGROUND) {
+//                    int backgroundEvent = UsageEvents.Event.MOVE_TO_FOREGROUND;
+//                    int foregroundEvent = UsageEvents.Event.MOVE_TO_BACKGROUND;
+                    int backgroundEvent = -1;
+                    int foregroundEvent = -1;
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        foregroundEvent = UsageEvents.Event.ACTIVITY_RESUMED;
+                        backgroundEvent = UsageEvents.Event.ACTIVITY_PAUSED;
+                    } else {
+                        foregroundEvent = UsageEvents.Event.MOVE_TO_FOREGROUND;
+                        backgroundEvent = UsageEvents.Event.MOVE_TO_BACKGROUND;
+                    }
+
+                    if (event.getEventType() == foregroundEvent) {
                         appForegroundDurations.put(packageName + "_start", event.getTimeStamp());
-                    } else if (event.getEventType() == UsageEvents.Event.MOVE_TO_BACKGROUND) {
+                    } else if (event.getEventType() == backgroundEvent) {
                         if (appForegroundDurations.containsKey(packageName + "_start")) {
                             long foregroundStartTime = appForegroundDurations.get(packageName + "_start");
                             ContentValues rowData = constructAppUsageEntry(packageName, foregroundStartTime, event.getTimeStamp());

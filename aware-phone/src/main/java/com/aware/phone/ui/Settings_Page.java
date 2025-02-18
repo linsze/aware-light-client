@@ -107,7 +107,7 @@ public class Settings_Page extends Aware_Activity {
 
         Aware.setSetting(getApplicationContext(), Aware_Preferences.BULK_SERVICE_ACTIVATION, true);
 
-        // Make sure that ESM is active to enable questionnaire initiation
+        // Use the checking of whether ESM is active to ensure that all services are still running
         if (!isESMActive()) {
             Aware.startAWARE(getApplicationContext(), true);
         }

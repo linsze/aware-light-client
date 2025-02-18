@@ -401,7 +401,7 @@ public class TestESM implements AwareTest {
             factory.addESM(esmRadio);
             factory.addESM(esmScale);
 
-            ESM.queueESM(context, factory.build(), "", true);
+            ESM.queueESM(context, factory.build(), "", "", true);
 
         } catch (JSONException e) {
             e.printStackTrace();
