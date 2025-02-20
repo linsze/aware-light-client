@@ -277,7 +277,7 @@ public class ESM_Queue extends FragmentActivity {
                         getContentResolver().update(ESM_Provider.ESM_Data.CONTENT_URI, rowData, ESM_Provider.ESM_Data._ID + "=" + esm.getID(), null);
                     }
                     runOnUiThread(() -> {
-                        Toast.makeText(getApplicationContext(), "Responses submitted", Toast.LENGTH_LONG).show();
+                        Toast.makeText(getApplicationContext(), "Responses submitted", Toast.LENGTH_SHORT).show();
                         // Remove the last summary fragment that was manually added before finishing the fragment activity
                         FragmentManager fragmentManager = getSupportFragmentManager();
                         Fragment summaryFragment = fragmentManager.findFragmentByTag("ESM_Summary");

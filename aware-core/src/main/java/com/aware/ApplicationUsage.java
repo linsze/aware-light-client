@@ -6,7 +6,6 @@ import android.app.AppOpsManager;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.app.usage.UsageEvents;
-import android.app.usage.UsageStats;
 import android.app.usage.UsageStatsManager;
 import android.content.BroadcastReceiver;
 import android.content.ContentResolver;
@@ -18,6 +17,7 @@ import android.content.SyncRequest;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.IBinder;
@@ -27,6 +27,7 @@ import android.util.Log;
 import androidx.core.app.NotificationCompat;
 
 import com.aware.providers.ApplicationUsage_Provider;
+import com.aware.providers.Applications_Provider;
 import com.aware.utils.Aware_Sensor;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -34,6 +35,7 @@ import java.util.List;
 import java.util.Map;
 
 import com.aware.providers.ApplicationUsage_Provider.ApplicationUsageStats;
+import com.aware.utils.DatabaseHelper;
 
 /**
  * Created by Lin Sze Khoo
@@ -41,16 +43,6 @@ import com.aware.providers.ApplicationUsage_Provider.ApplicationUsageStats;
  * Require usage access to be enabled manually (separated from typical permission access) but does not require accessibility
  */
 public class ApplicationUsage extends Aware_Sensor {
-
-//    public static HashMap<String, HashMap<String, String>> SETTINGS_PERMISSIONS = new HashMap<String, HashMap<String, String>>(){{
-//        put(Manifest.permission.PACKAGE_USAGE_STATS, new HashMap<String, String>(){{
-//            put("Application usage", Aware_Preferences.STATUS_APPLICATION_USAGE);
-//        }});
-//    }};
-//
-//    private static ArrayList<String> ADDITIONAL_PERMISSIONS = new ArrayList<String>(){{
-//        add(Manifest.permission.PACKAGE_USAGE_STATS);
-//    }};
 
     public static String TAG = "AWARE::Application usage";
 
@@ -85,6 +77,11 @@ public class ApplicationUsage extends Aware_Sensor {
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         super.onStartCommand(intent, flags, startId);
+
+        if (shouldDeleteDatabase) {
+            stopSelf();
+            return START_NOT_STICKY;
+        }
 
         if (!isUsageAccessEnabled()) {
             stopSelf();
@@ -276,6 +273,11 @@ public class ApplicationUsage extends Aware_Sensor {
     @Override
     public void onDestroy() {
         super.onDestroy();
+
+        if (shouldDeleteDatabase) {
+            getContentResolver().delete(Uri.parse("content://" + Applications_Provider.AUTHORITY + "/" + DatabaseHelper.DROP_TABLE_URI), null, null);
+        }
+
         unregisterReceiver(syncAppUsageReceiver);
         ContentResolver.setSyncAutomatically(Aware.getAWAREAccount(this), ApplicationUsage_Provider.getAuthority(this), false);
         ContentResolver.removePeriodicSync(

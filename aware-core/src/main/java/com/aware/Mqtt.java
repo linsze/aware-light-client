@@ -19,6 +19,7 @@ import com.aware.providers.Mqtt_Provider;
 import com.aware.providers.Mqtt_Provider.Mqtt_Messages;
 import com.aware.providers.Mqtt_Provider.Mqtt_Subscriptions;
 import com.aware.utils.Aware_Sensor;
+import com.aware.utils.DatabaseHelper;
 import com.aware.utils.SSLUtils;
 import com.aware.utils.Scheduler;
 
@@ -355,6 +356,12 @@ public class Mqtt extends Aware_Sensor implements MqttCallback {
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         super.onStartCommand(intent, flags, startId);
+
+        if (shouldDeleteDatabase) {
+            stopSelf();
+            return START_NOT_STICKY;
+        }
+
         if (PERMISSIONS_OK) {
             DEBUG = Aware.getSetting(this, Aware_Preferences.DEBUG_FLAG).equals("true");
 
@@ -382,6 +389,10 @@ public class Mqtt extends Aware_Sensor implements MqttCallback {
     @Override
     public void onDestroy() {
         super.onDestroy();
+
+        if (shouldDeleteDatabase) {
+            getContentResolver().delete(Uri.parse("content://" + Mqtt_Provider.AUTHORITY + "/" + DatabaseHelper.DROP_TABLE_URI), null, null);
+        }
 
         unregisterReceiver(mqttReceiver);
 

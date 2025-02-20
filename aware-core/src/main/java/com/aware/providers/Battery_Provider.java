@@ -17,6 +17,7 @@ import android.util.Log;
 import com.aware.Aware;
 import com.aware.utils.DatabaseHelper;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 
 /**
@@ -145,7 +146,7 @@ public class Battery_Provider extends ContentProvider {
     private void initialiseDatabase() {
         if (dbHelper == null)
             dbHelper = new DatabaseHelper(getContext(), DATABASE_NAME, null, DATABASE_VERSION, DATABASE_TABLES, TABLES_FIELDS);
-        if (database == null)
+        if (database == null || !dbHelper.isTableExists(database))
             database = dbHelper.getWritableDatabase();
     }
 
@@ -173,6 +174,13 @@ public class Battery_Provider extends ContentProvider {
             case BATTERY_CHARGE:
                 count = database.delete(DATABASE_TABLES[2], selection,
                         selectionArgs);
+                break;
+            case DatabaseHelper.DROP_TABLE_ID:
+                ArrayList<String> deletedTables = dbHelper.dropTable();
+                for (String table: deletedTables) {
+                    Log.i("AWARE", "Deleted " + table + " from local storage");
+                }
+                count = deletedTables.size();;
                 break;
             default:
                 database.endTransaction();
@@ -288,6 +296,8 @@ public class Battery_Provider extends ContentProvider {
                 BATTERY_CHARGE);
         sUriMatcher.addURI(Battery_Provider.AUTHORITY, DATABASE_TABLES[2]
                 + "/#", BATTERY_CHARGE_ID);
+        sUriMatcher.addURI(Battery_Provider.AUTHORITY, DatabaseHelper.DROP_TABLE_URI,
+                DatabaseHelper.DROP_TABLE_ID);
 
         batteryProjectionMap = new HashMap<String, String>();
         batteryProjectionMap.put(Battery_Data._ID, Battery_Data._ID);

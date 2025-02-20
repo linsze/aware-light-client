@@ -40,7 +40,7 @@ public class RefreshSamplingPref extends Preference {
             @Override
             public void onClick(View v) {
                 Aware.startAWARE(getContext(), true);
-                Toast.makeText(getContext(), "Data collection has been refreshed", Toast.LENGTH_LONG).show();
+                Toast.makeText(getContext(), "Data collection has been refreshed", Toast.LENGTH_SHORT).show();
             }
         });
 

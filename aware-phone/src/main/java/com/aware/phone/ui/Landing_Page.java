@@ -19,7 +19,7 @@ public class Landing_Page extends Aware_Activity {
         Intent activityToRedirect = null;
         // If the app is freshly installed (might have been uninstalled before)
         SharedPreferences prefs = getSharedPreferences("com.aware.phone", MODE_PRIVATE);
-        if (prefs.getAll().isEmpty()) {
+        if (prefs.getAll().isEmpty() || Aware.isSettingsEmpty(getApplicationContext())) {
             activityToRedirect = new Intent(getApplicationContext(), Configure.class);
         }
         else if (Aware.isStudy(getApplicationContext())) {

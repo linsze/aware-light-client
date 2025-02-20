@@ -204,7 +204,7 @@ public class QuestionnairePref extends Preference {
                 if (!esmDateToPrompt.equals("")) {
                     showDialog(esmDateToPrompt, scheduleTitle);
                 } else {
-                    Toast.makeText(getContext(), "Questionnaire has been answered", Toast.LENGTH_LONG).show();
+                    Toast.makeText(getContext(), "Questionnaire has been answered", Toast.LENGTH_SHORT).show();
                 }
             }
         });
@@ -217,7 +217,7 @@ public class QuestionnairePref extends Preference {
                 if (!esmDateToPrompt.equals("")) {
                     showDialog(esmDateToPrompt, scheduleTitle);
                 } else {
-                    Toast.makeText(getContext(), "Questionnaire has been answered", Toast.LENGTH_LONG).show();
+                    Toast.makeText(getContext(), "Questionnaire has been answered", Toast.LENGTH_SHORT).show();
                 }
             }
         });

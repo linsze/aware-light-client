@@ -24,6 +24,7 @@ import com.aware.providers.Applications_Provider.Applications_History;
 import com.aware.providers.Installations_Provider;
 import com.aware.providers.Installations_Provider.Installations_Data;
 import com.aware.utils.Aware_Sensor;
+import com.aware.utils.DatabaseHelper;
 
 /**
  * Service that logs application installations on the device.
@@ -124,6 +125,11 @@ public class Installations extends Aware_Sensor {
     public int onStartCommand(Intent intent, int flags, int startId) {
         super.onStartCommand(intent, flags, startId);
 
+        if (shouldDeleteDatabase) {
+            stopSelf();
+            return START_NOT_STICKY;
+        }
+
         if (PERMISSIONS_OK) {
             DEBUG = Aware.getSetting(this, Aware_Preferences.DEBUG_FLAG).equals("true");
             Aware.setSetting(this, Aware_Preferences.STATUS_INSTALLATIONS, true);
@@ -155,6 +161,10 @@ public class Installations extends Aware_Sensor {
     @Override
     public void onDestroy() {
         super.onDestroy();
+
+        if (shouldDeleteDatabase) {
+            getContentResolver().delete(Uri.parse("content://" + Installations_Provider.AUTHORITY + "/" + DatabaseHelper.DROP_TABLE_URI), null, null);
+        }
 
         unregisterReceiver(installationsMonitor);
 

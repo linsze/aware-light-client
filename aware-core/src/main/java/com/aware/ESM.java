@@ -14,12 +14,17 @@ import android.os.IBinder;
 import android.util.Log;
 import android.widget.Toast;
 import androidx.core.app.NotificationCompat;
+
+import com.aware.providers.Accelerometer_Provider;
 import com.aware.providers.ESM_Provider;
 import com.aware.providers.ESM_Provider.ESM_Data;
+import com.aware.syncadapters.AwareSyncAdapter;
 import com.aware.ui.ESM_Queue;
 import com.aware.ui.esms.ESMFactory;
 import com.aware.ui.esms.ESM_Question;
 import com.aware.utils.Aware_Sensor;
+import com.aware.utils.DatabaseHelper;
+
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -290,6 +295,10 @@ public class ESM extends Aware_Sensor {
     public void onDestroy() {
         super.onDestroy();
 
+        if (shouldDeleteDatabase) {
+            getContentResolver().delete(Uri.parse("content://" + ESM_Provider.AUTHORITY + "/" + DatabaseHelper.DROP_TABLE_URI), null, null);
+        }
+
         ContentResolver.setSyncAutomatically(Aware.getAWAREAccount(this), ESM_Provider.getAuthority(this), false);
         ContentResolver.removePeriodicSync(
                 Aware.getAWAREAccount(this),
@@ -306,19 +315,24 @@ public class ESM extends Aware_Sensor {
     public int onStartCommand(Intent intent, int flags, int startId) {
         super.onStartCommand(intent, flags, startId);
 
+        if (shouldDeleteDatabase) {
+            stopSelf();
+            return START_NOT_STICKY;
+        }
+
         if (PERMISSIONS_OK) {
 
             DEBUG = Aware.getSetting(this, Aware_Preferences.DEBUG_FLAG).equals("true");
             Aware.setSetting(this, Aware_Preferences.STATUS_ESM, true);
 
-            if (Aware.getSetting(getApplicationContext(), Aware_Preferences.STATUS_ESM).equals("true")) {
-                if (isESMWaiting(getApplicationContext()) && !isESMVisible(getApplicationContext())) {
-                    notifyESM(getApplicationContext(), "", "", true);
+            if (Aware.getSetting(this, Aware_Preferences.STATUS_ESM).equals("true")) {
+                if (isESMWaiting(this) && !isESMVisible(this)) {
+                    notifyESM(this, "", "", true);
                 }
             }
 
             if (DEBUG)
-                Log.d(TAG, "ESM service active... Queue = " + ESM_Queue.getQueueSize(getApplicationContext()));
+                Log.d(TAG, "ESM service active... Queue = " + ESM_Queue.getQueueSize(this));
 
             if (Aware.isStudy(this)) {
                 ContentResolver.setIsSyncable(Aware.getAWAREAccount(this), ESM_Provider.getAuthority(this), 1);

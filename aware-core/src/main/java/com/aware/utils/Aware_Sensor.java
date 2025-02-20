@@ -1,5 +1,6 @@
 package com.aware.utils;
 
+import static com.aware.Aware.ACTION_AWARE_DELETE_DATABASE;
 import static com.aware.ui.PermissionsHandler.ACTION_AWARE_PERMISSIONS_CHECK;
 import static com.aware.utils.PermissionUtils.MANDATORY_PERMISSIONS_GRANTED;
 import static com.aware.utils.PermissionUtils.SERVICE_FULL_PERMISSIONS_NOT_GRANTED;
@@ -66,6 +67,8 @@ public class Aware_Sensor extends Service {
      * Integration with sync adapters
      */
     public String AUTHORITY = "";
+
+    public boolean shouldDeleteDatabase = false;
 
     /**
      * Interface to share context with other applications/addons<br/>
@@ -139,6 +142,11 @@ public class Aware_Sensor extends Service {
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
+        if (intent != null && intent.getAction() != null && intent.getAction().equals(ACTION_AWARE_DELETE_DATABASE)) {
+            shouldDeleteDatabase = true;
+            return START_NOT_STICKY;
+        }
+
         checkPermissionRequests();
 
         //HACK: Not all permissions are granted but they have been requested

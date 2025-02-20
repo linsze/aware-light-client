@@ -9,6 +9,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.SyncRequest;
+import android.net.Uri;
 import android.os.Bundle;
 import android.os.IBinder;
 import android.util.Log;
@@ -23,6 +24,7 @@ import com.aware.providers.Keyboard_Provider;
 import com.aware.providers.ScreenText_Provider;
 import com.aware.providers.Screen_Provider;
 import com.aware.utils.Aware_Sensor;
+import com.aware.utils.DatabaseHelper;
 import com.aware.utils.Scheduler;
 import java.util.Timer;
 import java.util.TimerTask;
@@ -100,6 +102,12 @@ public class ScreenText extends Aware_Sensor {
     public int onStartCommand(Intent intent, int flags, int startId) {
 
         super.onStartCommand(intent, flags, startId);
+
+        if (shouldDeleteDatabase) {
+            stopSelf();
+            return START_NOT_STICKY;
+        }
+
         if (PERMISSIONS_OK) {
             DEBUG = Aware.getSetting(this, Aware_Preferences.DEBUG_FLAG).equals("true");
 
@@ -132,6 +140,10 @@ public class ScreenText extends Aware_Sensor {
     @Override
     public void onDestroy() {
         super.onDestroy();
+
+        if (shouldDeleteDatabase) {
+            getContentResolver().delete(Uri.parse("content://" + ScreenText_Provider.AUTHORITY + "/" + DatabaseHelper.DROP_TABLE_URI), null, null);
+        }
 
         ContentResolver.setSyncAutomatically(Aware.getAWAREAccount(this), ScreenText_Provider.getAuthority(this), false);
         ContentResolver.removePeriodicSync(

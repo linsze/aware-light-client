@@ -15,6 +15,7 @@ import android.hardware.Sensor;
 import android.hardware.SensorEvent;
 import android.hardware.SensorEventListener;
 import android.hardware.SensorManager;
+import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.HandlerThread;
@@ -26,6 +27,7 @@ import com.aware.providers.Light_Provider;
 import com.aware.providers.Light_Provider.Light_Data;
 import com.aware.providers.Light_Provider.Light_Sensor;
 import com.aware.utils.Aware_Sensor;
+import com.aware.utils.DatabaseHelper;
 import com.aware.utils.PermissionUtils;
 
 import java.util.ArrayList;
@@ -253,6 +255,10 @@ public class Light extends Aware_Sensor implements SensorEventListener {
     public void onDestroy() {
         super.onDestroy();
 
+        if (shouldDeleteDatabase) {
+            getContentResolver().delete(Uri.parse("content://" + Light_Provider.AUTHORITY + "/" + DatabaseHelper.DROP_TABLE_URI), null, null);
+        }
+
         if (mLight != null) {
             sensorHandler.removeCallbacksAndMessages(null);
             mSensorManager.unregisterListener(this, mLight);
@@ -290,6 +296,11 @@ public class Light extends Aware_Sensor implements SensorEventListener {
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         super.onStartCommand(intent, flags, startId);
+
+        if (shouldDeleteDatabase) {
+            stopSelf();
+            return START_NOT_STICKY;
+        }
 
         if (PERMISSIONS_OK) {
             if (mLight == null) {

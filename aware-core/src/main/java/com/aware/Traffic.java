@@ -6,6 +6,7 @@ import android.content.ContentValues;
 import android.content.Intent;
 import android.content.SyncRequest;
 import android.net.TrafficStats;
+import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.IBinder;
@@ -16,6 +17,7 @@ import android.util.Log;
 import com.aware.providers.Traffic_Provider;
 import com.aware.providers.Traffic_Provider.Traffic_Data;
 import com.aware.utils.Aware_Sensor;
+import com.aware.utils.DatabaseHelper;
 
 /**
  * Service that logs I/O traffic from WiFi & mobile network
@@ -157,6 +159,11 @@ public class Traffic extends Aware_Sensor {
     public int onStartCommand(Intent intent, int flags, int startId) {
         super.onStartCommand(intent, flags, startId);
 
+        if (shouldDeleteDatabase) {
+            stopSelf();
+            return START_NOT_STICKY;
+        }
+
         if (PERMISSIONS_OK) {
 
             if (startTotalRxBytes == TrafficStats.UNSUPPORTED) {
@@ -241,6 +248,10 @@ public class Traffic extends Aware_Sensor {
     @Override
     public void onDestroy() {
         super.onDestroy();
+
+        if (shouldDeleteDatabase) {
+            getContentResolver().delete(Uri.parse("content://" + Traffic_Provider.AUTHORITY + "/" + DatabaseHelper.DROP_TABLE_URI), null, null);
+        }
 
         try {
             telephonyManager.listen(networkTrafficObserver, PhoneStateListener.LISTEN_NONE);

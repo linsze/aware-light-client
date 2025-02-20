@@ -18,6 +18,7 @@ import com.aware.Aware;
 import com.aware.Barometer;
 import com.aware.utils.DatabaseHelper;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 
 /**
@@ -126,7 +127,7 @@ public class Gyroscope_Provider extends ContentProvider {
     private void initialiseDatabase() {
         if (dbHelper == null)
             dbHelper = new DatabaseHelper(getContext(), DATABASE_NAME, null, DATABASE_VERSION, DATABASE_TABLES, TABLES_FIELDS);
-        if (database == null)
+        if (database == null || !dbHelper.isTableExists(database))
             database = dbHelper.getWritableDatabase();
     }
 
@@ -150,6 +151,13 @@ public class Gyroscope_Provider extends ContentProvider {
             case GYRO_DATA:
                 count = database.delete(DATABASE_TABLES[1], selection,
                         selectionArgs);
+                break;
+            case DatabaseHelper.DROP_TABLE_ID:
+                ArrayList<String> deletedTables = dbHelper.dropTable();
+                for (String table: deletedTables) {
+                    Log.i("AWARE", "Deleted " + table + " from local storage");
+                }
+                count = deletedTables.size();;
                 break;
             default:
                 database.endTransaction();
@@ -306,6 +314,9 @@ public class Gyroscope_Provider extends ContentProvider {
                 GYRO_DATA);
         sUriMatcher.addURI(Gyroscope_Provider.AUTHORITY, DATABASE_TABLES[1]
                 + "/#", GYRO_DATA_ID);
+        sUriMatcher.addURI(Gyroscope_Provider.AUTHORITY, DatabaseHelper.DROP_TABLE_URI,
+                DatabaseHelper.DROP_TABLE_ID);
+
 
         gyroDeviceMap = new HashMap<String, String>();
         gyroDeviceMap.put(Gyroscope_Sensor._ID, Gyroscope_Sensor._ID);

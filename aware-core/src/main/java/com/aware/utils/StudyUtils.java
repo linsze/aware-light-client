@@ -258,7 +258,7 @@ public class StudyUtils extends IntentService {
         boolean is_developer = Aware.getSetting(context, Aware_Preferences.DEBUG_FLAG).equals("true");
 
         //First reset the client to default settings...
-        Aware.reset(context);
+        Aware.reset(context, false);
 
         input_password_ = input_password;
         if (is_developer) Aware.setSetting(context, Aware_Preferences.DEBUG_FLAG, true);

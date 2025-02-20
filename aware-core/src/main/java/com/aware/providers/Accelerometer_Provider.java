@@ -18,6 +18,7 @@ import com.aware.Accelerometer;
 import com.aware.Aware;
 import com.aware.utils.DatabaseHelper;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 
 /**
@@ -41,6 +42,8 @@ public class Accelerometer_Provider extends ContentProvider {
     private final int ACCEL_DEV_ID = 2;
     private final int ACCEL_DATA = 3;
     private final int ACCEL_DATA_ID = 4;
+
+    public static final int DELETE_ALL = 100;
 
     private UriMatcher sUriMatcher;
     private HashMap<String, String> accelDeviceMap;
@@ -129,7 +132,7 @@ public class Accelerometer_Provider extends ContentProvider {
     private void initialiseDatabase() {
         if (dbHelper == null)
             dbHelper = new DatabaseHelper(getContext(), DATABASE_NAME, null, DATABASE_VERSION, DATABASE_TABLES, TABLES_FIELDS);
-        if (database == null)
+        if (database == null || !dbHelper.isTableExists(database))
             database = dbHelper.getWritableDatabase();
     }
 
@@ -150,6 +153,13 @@ public class Accelerometer_Provider extends ContentProvider {
                 break;
             case ACCEL_DATA:
                 count = database.delete(DATABASE_TABLES[1], selection, selectionArgs);
+                break;
+            case DatabaseHelper.DROP_TABLE_ID:
+                ArrayList<String> deletedTables = dbHelper.dropTable();
+                for (String table: deletedTables) {
+                    Log.i("AWARE", "Deleted " + table + " from local storage");
+                }
+                count = deletedTables.size();
                 break;
             default:
                 database.endTransaction();
@@ -298,6 +308,8 @@ public class Accelerometer_Provider extends ContentProvider {
         sUriMatcher.addURI(Accelerometer_Provider.AUTHORITY, DATABASE_TABLES[0] + "/#", ACCEL_DEV_ID);
         sUriMatcher.addURI(Accelerometer_Provider.AUTHORITY, DATABASE_TABLES[1], ACCEL_DATA);
         sUriMatcher.addURI(Accelerometer_Provider.AUTHORITY, DATABASE_TABLES[1] + "/#", ACCEL_DATA_ID);
+        sUriMatcher.addURI(Accelerometer_Provider.AUTHORITY, DatabaseHelper.DROP_TABLE_URI,
+                DatabaseHelper.DROP_TABLE_ID);
 
         accelDeviceMap = new HashMap<>();
         accelDeviceMap.put(Accelerometer_Sensor._ID, Accelerometer_Sensor._ID);

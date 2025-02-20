@@ -11,6 +11,7 @@ import android.content.SyncRequest;
 import android.database.Cursor;
 import android.database.SQLException;
 import android.database.sqlite.SQLiteException;
+import android.net.Uri;
 import android.os.BatteryManager;
 import android.os.Binder;
 import android.os.Bundle;
@@ -23,6 +24,7 @@ import com.aware.providers.Battery_Provider.Battery_Charges;
 import com.aware.providers.Battery_Provider.Battery_Data;
 import com.aware.providers.Battery_Provider.Battery_Discharges;
 import com.aware.utils.Aware_Sensor;
+import com.aware.utils.DatabaseHelper;
 
 /**
  * Service that logs power related events (battery and shutdown/reboot)
@@ -390,6 +392,10 @@ public class Battery extends Aware_Sensor {
     public void onDestroy() {
         super.onDestroy();
 
+        if (shouldDeleteDatabase) {
+            getContentResolver().delete(Uri.parse("content://" + Battery_Provider.AUTHORITY + "/" + DatabaseHelper.DROP_TABLE_URI), null, null);
+        }
+
         unregisterReceiver(batteryMonitor);
 
         ContentResolver.setSyncAutomatically(Aware.getAWAREAccount(this), Battery_Provider.getAuthority(this), false);
@@ -406,6 +412,11 @@ public class Battery extends Aware_Sensor {
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         super.onStartCommand(intent, flags, startId);
+
+        if (shouldDeleteDatabase) {
+            stopSelf();
+            return START_NOT_STICKY;
+        }
 
         if (PERMISSIONS_OK) {
             DEBUG = Aware.getSetting(this, Aware_Preferences.DEBUG_FLAG).equals("true");

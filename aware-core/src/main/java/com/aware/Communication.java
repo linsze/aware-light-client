@@ -27,6 +27,7 @@ import com.aware.providers.Communication_Provider;
 import com.aware.providers.Communication_Provider.Calls_Data;
 import com.aware.providers.Communication_Provider.Messages_Data;
 import com.aware.utils.Aware_Sensor;
+import com.aware.utils.DatabaseHelper;
 import com.aware.utils.Encrypter;
 
 import java.util.ArrayList;
@@ -469,6 +470,11 @@ public class Communication extends Aware_Sensor {
 
         super.onStartCommand(intent, flags, startId);
 
+        if (shouldDeleteDatabase) {
+            stopSelf();
+            return START_NOT_STICKY;
+        }
+
 
         // All permissions are granted so activate all sensing
         if (PERMISSIONS_OK) {
@@ -530,6 +536,10 @@ public class Communication extends Aware_Sensor {
     @Override
     public void onDestroy() {
         super.onDestroy();
+
+        if (shouldDeleteDatabase) {
+            getContentResolver().delete(Uri.parse("content://" + Communication_Provider.AUTHORITY + "/" + DatabaseHelper.DROP_TABLE_URI), null, null);
+        }
 
         getContentResolver().unregisterContentObserver(callsObs);
         getContentResolver().unregisterContentObserver(msgsObs);

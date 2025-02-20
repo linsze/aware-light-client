@@ -8,6 +8,7 @@ import android.hardware.Sensor;
 import android.hardware.SensorEvent;
 import android.hardware.SensorEventListener;
 import android.hardware.SensorManager;
+import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.HandlerThread;
@@ -17,6 +18,7 @@ import android.util.Log;
 
 import com.aware.providers.Significant_Provider;
 import com.aware.utils.Aware_Sensor;
+import com.aware.utils.DatabaseHelper;
 
 import java.util.ArrayList;
 
@@ -117,6 +119,11 @@ public class SignificantMotion extends Aware_Sensor implements SensorEventListen
     public int onStartCommand(Intent intent, int flags, int startId) {
         super.onStartCommand(intent, flags, startId);
 
+        if (shouldDeleteDatabase) {
+            stopSelf();
+            return START_NOT_STICKY;
+        }
+
         if (PERMISSIONS_OK) {
             if (mAccelerometer == null) {
                 if (DEBUG)
@@ -160,6 +167,10 @@ public class SignificantMotion extends Aware_Sensor implements SensorEventListen
     @Override
     public void onDestroy() {
         super.onDestroy();
+
+        if (shouldDeleteDatabase) {
+            getContentResolver().delete(Uri.parse("content://" + Significant_Provider.AUTHORITY + "/" + DatabaseHelper.DROP_TABLE_URI), null, null);
+        }
 
         isSignificantMotionActive = false;
         sensorHandler.removeCallbacksAndMessages(null);
