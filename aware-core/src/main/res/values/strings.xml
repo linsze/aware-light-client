@@ -20,6 +20,8 @@
     <string name="aware_activate_battery_optimize_ignore_title">Doze</string>
     <string name="aware_activate_battery_optimize_ignore">Tap and add to the ignore battery optimizations\' list.</string>
     <string name="aware_battery_recharge">Please, recharge your phone as soon as possible.</string>
+    <string name="aware_allow_usage_access_title">Please allow usage access</string>
+    <string name="aware_allow_usage_access">Tap here to allow usage access for AWARE.</string>
     <string name="aware_notif_study_sync_title">Study Sync</string>
     <string name="aware_notif_study_sync">Your study configuration was updated.</string>
     <string name="aware_join_study_link">Join Study by link</string>
@@ -41,10 +43,14 @@
     <string name="foreground_notification_title">AWARE</string>
     <string name="foreground_notification_text">Data collection active</string>
     <string name="foreground_notification_sync_text">Sync</string>
+    <string name="day_questionnaire">Day questionnaire</string>
+    <string name="evening_questionnaire">Evening questionnaire</string>
+    <string name="refresh_sampling">Refresh data sampling</string>
 
     <string name="sensor_screentext">ScreenText</string>
     <string name="sensor_accelerometer">Accelerometer</string>
     <string name="sensor_applications">Applications</string>
+    <string name="sensor_application_usage">Application Usage</string>
     <string name="sensor_bluetooth">Bluetooth</string>
     <string name="sensor_locations">Locations</string>
     <string name="sensor_installations">Installations</string>

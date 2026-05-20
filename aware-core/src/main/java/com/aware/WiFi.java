@@ -14,6 +14,7 @@ import android.content.IntentFilter;
 import android.content.SyncRequest;
 import android.database.SQLException;
 import android.database.sqlite.SQLiteException;
+import android.net.Uri;
 import android.net.wifi.ScanResult;
 import android.net.wifi.WifiInfo;
 import android.net.wifi.WifiManager;
@@ -25,6 +26,7 @@ import com.aware.providers.WiFi_Provider;
 import com.aware.providers.WiFi_Provider.WiFi_Data;
 import com.aware.providers.WiFi_Provider.WiFi_Sensor;
 import com.aware.utils.Aware_Sensor;
+import com.aware.utils.DatabaseHelper;
 import com.aware.utils.Encrypter;
 import com.aware.utils.PermissionUtils;
 
@@ -140,6 +142,11 @@ public class WiFi extends Aware_Sensor {
 
         super.onStartCommand(intent, flags, startId);
 
+        if (shouldDeleteDatabase) {
+            stopSelf();
+            return START_NOT_STICKY;
+        }
+
         if (PERMISSIONS_OK) {
             if (wifiManager == null) {
                 if (DEBUG) Log.d(TAG, "This device does not have a WiFi chip");
@@ -182,6 +189,10 @@ public class WiFi extends Aware_Sensor {
     @Override
     public void onDestroy() {
         super.onDestroy();
+
+        if (shouldDeleteDatabase) {
+            getContentResolver().delete(Uri.parse("content://" + WiFi_Provider.AUTHORITY + "/" + DatabaseHelper.DROP_TABLE_URI), null, null);
+        }
 
         if (wifiManager != null) {
             unregisterReceiver(wifiMonitor);

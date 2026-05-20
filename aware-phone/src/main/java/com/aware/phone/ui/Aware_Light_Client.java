@@ -1,6 +1,7 @@
 package com.aware.phone.ui;
 
 import android.Manifest;
+import android.app.AppOpsManager;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.content.Context;
@@ -25,6 +26,7 @@ import android.view.ViewGroup;
 import android.widget.ListView;
 
 import com.aware.Applications;
+import com.aware.ApplicationUsage;
 import com.aware.Aware;
 import com.aware.Aware_Preferences;
 import com.aware.phone.R;
@@ -49,6 +51,8 @@ import androidx.core.content.PermissionChecker;
 import static com.aware.Aware.AWARE_NOTIFICATION_IMPORTANCE_GENERAL;
 import static com.aware.Aware.TAG;
 import static com.aware.Aware.setNotificationProperties;
+import static com.aware.Aware.startApplicationUsage;
+import static com.aware.Aware.stopApplicationUsage;
 import static com.aware.utils.PermissionUtils.SERVICES_WITH_DENIED_PERMISSIONS;
 import static com.aware.utils.PermissionUtils.SERVICE_FULL_PERMISSIONS_NOT_GRANTED;
 
@@ -224,12 +228,32 @@ public class Aware_Light_Client extends Aware_Activity {
             }
 
             //Check if AWARE is active on the accessibility services. Android Wear doesn't support accessibility services (no API yet...)
-            if (!Aware.is_watch(this)) {
-                Applications.isAccessibilityServiceActive(this);
-            }
+//            if (!Aware.is_watch(this)) {
+//                Applications.isAccessibilityServiceActive(this);
+//            }
 
             //Check if AWARE is allowed to run on Doze
             //Aware.isBatteryOptimizationIgnored(this, getPackageName());
+        }
+
+        /**
+         * Checks if usage access has been allowed
+         */
+        if (Aware.getSetting(getApplicationContext(), Aware_Preferences.STATUS_APPLICATION_USAGE).equals("true")) {
+            AppOpsManager appOps = (AppOpsManager) getSystemService(Context.APP_OPS_SERVICE);
+            int mode = appOps.checkOpNoThrow(AppOpsManager.OPSTR_GET_USAGE_STATS, android.os.Process.myUid(), getPackageName());
+            boolean granted = (mode == AppOpsManager.MODE_ALLOWED);
+            if (!granted) {
+                // Stop the service first if it was previous started but usage access has been removed
+                if (Aware.isApplicationUsageActive()) {
+                    stopApplicationUsage(getApplicationContext());
+                }
+                // Notification to prompt permission
+                ApplicationUsage.promptUsageAccessNotification(getApplicationContext());
+            } else if (!Aware.isApplicationUsageActive()) {
+                // Cases where access has just been allowed
+                startApplicationUsage(getApplicationContext());
+            }
         }
     }
 

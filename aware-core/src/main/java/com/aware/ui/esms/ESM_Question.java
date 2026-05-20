@@ -30,6 +30,11 @@ import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import java.text.ParseException;
+import java.text.SimpleDateFormat;
+import java.util.Date;
+import java.util.Locale;
+
 /**
  * Builder class for ESM questions. Any new ESM type needs to extend this class.
  */
@@ -52,6 +57,8 @@ public class ESM_Question extends Fragment {
     public static final String flow_user_answer = "user_answer";
     public static final String flow_next_esm = "next_esm";
     public static final String esm_app_integration = "esm_app_integration";
+
+    public static final String esm_date = "esm_date";
 
     public static ESM_Queue.SharedViewModel sharedViewModel;
 
@@ -241,6 +248,25 @@ public class ESM_Question extends Fragment {
         return this;
     }
 
+    public String getDate() throws JSONException {
+        if (!this.esm.has(esm_date)) {
+            this.esm.put(esm_date, "");
+        }
+        return this.esm.getString(esm_date);
+    }
+
+    /**
+     * Set ESM date
+     *
+     * @param date
+     * @return
+     * @throws JSONException
+     */
+    public ESM_Question setDate(String date) throws JSONException {
+        this.esm.put(esm_date, date);
+        return this;
+    }
+
     /**
      * Get questionnaire flow.
      *
@@ -351,7 +377,7 @@ public class ESM_Question extends Fragment {
     @Override
     public void onAttach(@NonNull Context context) {
         super.onAttach(context);
-        sharedViewModel = new ViewModelProvider(getActivity(), new ESM_Queue.SharedViewModelFactory()).get(ESM_Queue.SharedViewModel.class);
+        sharedViewModel = new ViewModelProvider(requireActivity()).get(ESM_Queue.SharedViewModel.class);
     }
 
     @Override
@@ -375,6 +401,23 @@ public class ESM_Question extends Fragment {
         } catch (JSONException e) {
             e.printStackTrace();
         }
+    }
+
+    public String getDateString() {
+        SimpleDateFormat inputFormat = new SimpleDateFormat("yyyy-MM-dd", Locale.getDefault());
+        SimpleDateFormat dayFormat = new SimpleDateFormat("EEEE", Locale.getDefault());
+        String dateString = "";
+        try {
+            String esmDate = this.getDate();
+            if (!esmDate.equals("")) {
+                Date date = inputFormat.parse(esmDate);
+                String dayOfWeek = dayFormat.format(date);
+                dateString = esmDate + " (" + dayOfWeek + ")";
+            }
+        } catch (JSONException | ParseException e) {
+            e.printStackTrace();
+        }
+        return dateString;
     }
 
     /**

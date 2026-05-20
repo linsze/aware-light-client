@@ -17,6 +17,7 @@ import android.util.Log;
 import com.aware.Aware;
 import com.aware.utils.DatabaseHelper;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 
 /**
@@ -127,6 +128,13 @@ public class Mqtt_Provider extends ContentProvider {
 			count = database.delete(DATABASE_TABLES[1], selection,
 					selectionArgs);
 			break;
+		case DatabaseHelper.DROP_TABLE_ID:
+			ArrayList<String> deletedTables = dbHelper.dropTable();
+                for (String table: deletedTables) {
+                    Log.i("AWARE", "Deleted " + table + " from local storage");
+                }
+                count = deletedTables.size();;
+			break;
 		default:
 			database.endTransaction();
 			throw new IllegalArgumentException("Unknown URI " + uri);
@@ -221,6 +229,8 @@ public class Mqtt_Provider extends ContentProvider {
                 MQTT_SUBSCRIPTION);
         sUriMatcher.addURI(Mqtt_Provider.AUTHORITY, DATABASE_TABLES[1] + "/#",
                 MQTT_SUBSCRIPTION_ID);
+		sUriMatcher.addURI(Mqtt_Provider.AUTHORITY, DatabaseHelper.DROP_TABLE_URI,
+				DatabaseHelper.DROP_TABLE_ID);
 
         messagesMap = new HashMap<String, String>();
         messagesMap.put(Mqtt_Messages.MQTT_ID, Mqtt_Messages.MQTT_ID);

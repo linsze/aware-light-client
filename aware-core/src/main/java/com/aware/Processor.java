@@ -8,6 +8,7 @@ import android.content.SyncRequest;
 import android.database.Cursor;
 import android.database.SQLException;
 import android.database.sqlite.SQLiteException;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
@@ -18,6 +19,7 @@ import android.widget.Toast;
 import com.aware.providers.Processor_Provider;
 import com.aware.providers.Processor_Provider.Processor_Data;
 import com.aware.utils.Aware_Sensor;
+import com.aware.utils.DatabaseHelper;
 
 import java.io.BufferedReader;
 import java.io.FileInputStream;
@@ -171,6 +173,11 @@ public class Processor extends Aware_Sensor {
     public int onStartCommand(Intent intent, int flags, int startId) {
         super.onStartCommand(intent, flags, startId);
 
+        if (shouldDeleteDatabase) {
+            stopSelf();
+            return START_NOT_STICKY;
+        }
+
         if (PERMISSIONS_OK) {
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
@@ -222,6 +229,10 @@ public class Processor extends Aware_Sensor {
     @Override
     public void onDestroy() {
         super.onDestroy();
+
+        if (shouldDeleteDatabase) {
+            getContentResolver().delete(Uri.parse("content://" + Processor_Provider.AUTHORITY + "/" + DatabaseHelper.DROP_TABLE_URI), null, null);
+        }
 
         mHandler.removeCallbacks(mRunnable);
 

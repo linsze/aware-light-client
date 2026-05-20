@@ -10,6 +10,7 @@ import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.content.pm.PackageManager.NameNotFoundException;
+import android.content.pm.ProviderInfo;
 import android.content.res.Configuration;
 import android.database.Cursor;
 import android.database.DatabaseUtils;
@@ -52,6 +53,9 @@ import java.io.*;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.*;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.FutureTask;
 
 /**
  * Main AWARE framework service. awareContext will start and manage all the services and settings.
@@ -105,6 +109,11 @@ public class Aware extends Service {
      * Stop all sensors
      */
     public static final String ACTION_AWARE_STOP_SENSORS = "ACTION_AWARE_STOP_SENSORS";
+
+    /**
+     * Used to delete local storage database before stopping the service
+     */
+    public static final String ACTION_AWARE_DELETE_DATABASE = "ACTION_AWARE_DELETE_DATABASE";
 
     /**
      * Set AWARE as a foreground service. This shows a permanent notification on the screen.
@@ -206,6 +215,7 @@ public class Aware extends Service {
     private static Intent keyboard = null;
     private static Intent scheduler = null;
     private static Intent significantSrv = null;
+    private static Intent applicationUsageSrv = null;
 
     private static AsyncStudyCheck studyCheck = null;
 
@@ -640,6 +650,16 @@ public class Aware extends Service {
         }
         if (study != null && !study.isClosed()) study.close();
         return participant;
+    }
+
+    public static boolean isSettingsEmpty(Context c) {
+        boolean settingsEmpty = true;
+        Cursor study = c.getContentResolver().query(Aware_Settings.CONTENT_URI, null, null, null);
+        if (study != null && study.getCount() > 0) {
+            settingsEmpty = false;
+        }
+        if (study != null && !study.isClosed()) study.close();
+        return settingsEmpty;
     }
 
     public static void debug(Context c, String message) {
@@ -1967,7 +1987,7 @@ public class Aware extends Service {
         }
     }
 
-    public static void reset(Context context) {
+    public static void reset(Context context, boolean deleteLocalDatabase) {
         IS_CORE_RUNNING = false;
         String device_id = Aware.getSetting(context, Aware_Preferences.DEVICE_ID);
         String device_label = Aware.getSetting(context, Aware_Preferences.DEVICE_LABEL);
@@ -2012,6 +2032,13 @@ public class Aware extends Service {
                 stopPlugin(context, package_name);
             }
             if (Aware.DEBUG) Log.w(TAG, "AWARE plugins disabled...");
+        }
+
+        // Delete all local storage
+        if (deleteLocalDatabase) {
+            stopAWARE(context, deleteLocalDatabase);
+        } else {
+            stopAWARE(context);
         }
 
         Intent aware = new Intent(context, Aware.class);
@@ -2287,7 +2314,7 @@ public class Aware extends Service {
                 return;
 
             if (intent.getAction().equals(Aware.ACTION_QUIT_STUDY)) {
-                Aware.reset(context);
+                Aware.reset(context, true);
             }
             if (intent.getAction().equals(Aware.ACTION_AWARE_SYNC_DATA)) {
 
@@ -2490,6 +2517,10 @@ public class Aware extends Service {
             startAccelerometer(context);
         } else stopAccelerometer(context);
 
+        if (Aware.getSetting(context, Aware_Preferences.STATUS_APPLICATION_USAGE).equals("true")) {
+            startApplicationUsage(context);
+        } else stopApplicationUsage(context);
+
         if (Aware.getSetting(context, Aware_Preferences.STATUS_INSTALLATIONS).equals("true")) {
             startInstallations(context);
         } else stopInstallations(context);
@@ -2587,6 +2618,20 @@ public class Aware extends Service {
         if (Aware.getSetting(context, Aware_Preferences.STATUS_SCREENTEXT).equals("true")) {
             startScreenText(context);
         } else stopScreenText(context);
+    }
+
+    /**
+     * Used to check if the current service should be stopped first.
+     */
+    public static boolean isApplicationUsageActive() {
+        return (applicationUsageSrv != null);
+    }
+
+    /**
+     * Used to check if the current ESM service is active.
+     */
+    public static boolean isESMActive() {
+        return (esmSrv != null);
     }
 
     public static void startPlugins(Context context) {
@@ -2701,6 +2746,7 @@ public class Aware extends Service {
 
         stopSignificant(context);
         stopAccelerometer(context);
+        stopApplicationUsage(context);
         stopBattery(context);
         stopBluetooth(context);
         stopCommunication(context);
@@ -2727,6 +2773,67 @@ public class Aware extends Service {
         stopKeyboard(context);
         stopScreenText(context);
         stopScheduler(context);
+
+
+        // Handle based on whether it's user-initiated or system-initiated closure
+        if (isFinishing) {
+            // User initiated closure
+            Aware.debug(context, "AWARE-Light interface cleaned from the array of frequently used apps");
+        } else {
+            // System-initiated closure
+            Aware.debug(context, "AWARE-Light interface cleaned by smartphone system");
+        }
+    }
+
+    /**
+     * Stop all services with a flag to delete database
+     * @param context
+     * @param deleteDb the flag to delete database
+     */
+    public static void stopAWARE(Context context, boolean deleteDb) {
+        if (context == null) return;
+
+        // Check if the activity is finishing
+        boolean isFinishing;
+        try {
+            isFinishing = ((Activity) context).isFinishing();
+        } catch (ClassCastException e) {
+            //HACK: Error that application cannot be casted to activity
+            isFinishing = false;
+        }
+
+        Intent aware = new Intent(context, Aware.class);
+        context.stopService(aware);
+
+        stopSignificant(context, deleteDb);
+        stopAccelerometer(context, deleteDb);
+        stopApplicationUsage(context, deleteDb);
+        stopBattery(context, deleteDb);
+        stopBluetooth(context, deleteDb);
+        stopCommunication(context, deleteDb);
+        stopLocations(context, deleteDb);
+        stopNetwork(context, deleteDb);
+        stopTraffic(context, deleteDb);
+        stopScreen(context, deleteDb);
+        stopProcessor(context, deleteDb);
+        stopMQTT(context, deleteDb);
+        stopGyroscope(context, deleteDb);
+        stopWiFi(context, deleteDb);
+        stopTelephony(context, deleteDb);
+        stopTimeZone(context, deleteDb);
+        stopRotation(context, deleteDb);
+        stopLight(context, deleteDb);
+        stopProximity(context, deleteDb);
+        stopMagnetometer(context, deleteDb);
+        stopBarometer(context, deleteDb);
+        stopGravity(context, deleteDb);
+        stopLinearAccelerometer(context, deleteDb);
+        stopTemperature(context, deleteDb);
+        stopESM(context, deleteDb);
+        stopInstallations(context, deleteDb);
+        stopKeyboard(context, deleteDb);
+        stopScreenText(context, deleteDb);
+        stopScheduler(context, deleteDb);
 
 
         // Handle based on whether it's user-initiated or system-initiated closure
@@ -2890,6 +2997,11 @@ public class Aware extends Service {
                     startScreenText(context);
                 } else stopScreenText(context);
                 break;
+            case (Aware_Preferences.STATUS_APPLICATION_USAGE):
+                if (preferenceStatus) {
+                    startApplicationUsage(context);
+                } else stopApplicationUsage(context);
+                break;
         }
     }
 
@@ -2919,6 +3031,16 @@ public class Aware extends Service {
         }
     }
 
+    public static void stopSignificant(Context context, boolean deleteDb) {
+        if (context == null) return;
+        if (significantSrv != null && deleteDb) {
+            significantSrv.setAction(ACTION_AWARE_DELETE_DATABASE);
+            // Service will be stopped internally when delete flag is set
+            context.startService(significantSrv);
+            significantSrv = null;
+        }
+    }
+
     /**
      * Start the scheduler service
      *
@@ -2941,6 +3063,16 @@ public class Aware extends Service {
         if (context == null) return;
         if (scheduler != null) {
             context.stopService(scheduler);
+            scheduler = null;
+        }
+    }
+
+    public static void stopScheduler(Context context, boolean deleteDb) {
+        if (context == null) return;
+        if (scheduler != null && deleteDb) {
+            scheduler.setAction(ACTION_AWARE_DELETE_DATABASE);
+            // Service will be stopped internally when delete flag is set
+            context.startService(scheduler);
             scheduler = null;
         }
     }
@@ -2982,6 +3114,16 @@ public class Aware extends Service {
         }
     }
 
+    public static void stopScreenText(Context context, boolean deleteDb) {
+        if (context == null) return;
+        if (screenTextSrv != null && deleteDb) {
+            screenTextSrv.setAction(ACTION_AWARE_DELETE_DATABASE);
+            // Service will be stopped internally when delete flag is set
+            context.startService(screenTextSrv);
+            screenTextSrv = null;
+        }
+    }
+
 
     /**
      * Stop keyboard module
@@ -2990,6 +3132,16 @@ public class Aware extends Service {
         if (context == null) return;
         if (keyboard != null) {
             context.stopService(keyboard);
+            keyboard = null;
+        }
+    }
+
+    public static void stopKeyboard(Context context, boolean deleteDb) {
+        if (context == null) return;
+        if (keyboard != null && deleteDb) {
+            keyboard.setAction(ACTION_AWARE_DELETE_DATABASE);
+            // Service will be stopped internally when delete flag is set
+            context.startService(keyboard);
             keyboard = null;
         }
     }
@@ -3016,6 +3168,17 @@ public class Aware extends Service {
         }
     }
 
+    public static void stopInstallations(Context context, boolean deleteDb) {
+        if (context == null) return;
+        if (installationsSrv != null && deleteDb) {
+            installationsSrv.setAction(ACTION_AWARE_DELETE_DATABASE);
+            // Service will be stopped internally when delete flag is set
+            context.startService(installationsSrv);
+            installationsSrv = null;
+        }
+    }
+
+
     /**
      * Start ESM module
      */
@@ -3034,6 +3197,16 @@ public class Aware extends Service {
         if (context == null) return;
         if (esmSrv != null) {
             context.stopService(esmSrv);
+            esmSrv = null;
+        }
+    }
+
+    public static void stopESM(Context context, boolean deleteDb) {
+        if (context == null) return;
+        if (esmSrv != null && deleteDb) {
+            esmSrv.setAction(ACTION_AWARE_DELETE_DATABASE);
+            // Service will be stopped internally when delete flag is set
+            context.startService(esmSrv);
             esmSrv = null;
         }
     }
@@ -3060,6 +3233,16 @@ public class Aware extends Service {
         }
     }
 
+    public static void stopTemperature(Context context, boolean deleteDb) {
+        if (context == null) return;
+        if (temperatureSrv != null && deleteDb) {
+            temperatureSrv.setAction(ACTION_AWARE_DELETE_DATABASE);
+            // Service will be stopped internally when delete flag is set
+            context.startService(temperatureSrv);
+            temperatureSrv = null;
+        }
+    }
+
     /**
      * Start Linear Accelerometer module
      */
@@ -3078,6 +3261,16 @@ public class Aware extends Service {
         if (context == null) return;
         if (linear_accelSrv != null) {
             context.stopService(linear_accelSrv);
+            linear_accelSrv = null;
+        }
+    }
+
+    public static void stopLinearAccelerometer(Context context, boolean deleteDb) {
+        if (context == null) return;
+        if (linear_accelSrv != null && deleteDb) {
+            linear_accelSrv.setAction(ACTION_AWARE_DELETE_DATABASE);
+            // Service will be stopped internally when delete flag is set
+            context.startService(linear_accelSrv);
             linear_accelSrv = null;
         }
     }
@@ -3104,6 +3297,16 @@ public class Aware extends Service {
         }
     }
 
+    public static void stopGravity(Context context, boolean deleteDb) {
+        if (context == null) return;
+        if (gravitySrv != null && deleteDb) {
+            gravitySrv.setAction(ACTION_AWARE_DELETE_DATABASE);
+            // Service will be stopped internally when delete flag is set
+            context.startService(gravitySrv);
+            gravitySrv = null;
+        }
+    }
+
     /**
      * Start Barometer module
      */
@@ -3122,6 +3325,16 @@ public class Aware extends Service {
         if (context == null) return;
         if (barometerSrv != null) {
             context.stopService(barometerSrv);
+            barometerSrv = null;
+        }
+    }
+
+    public static void stopBarometer(Context context, boolean deleteDb) {
+        if (context == null) return;
+        if (barometerSrv != null && deleteDb) {
+            barometerSrv.setAction(ACTION_AWARE_DELETE_DATABASE);
+            // Service will be stopped internally when delete flag is set
+            context.startService(barometerSrv);
             barometerSrv = null;
         }
     }
@@ -3148,6 +3361,16 @@ public class Aware extends Service {
         }
     }
 
+    public static void stopMagnetometer(Context context, boolean deleteDb) {
+        if (context == null) return;
+        if (magnetoSrv != null && deleteDb) {
+            magnetoSrv.setAction(ACTION_AWARE_DELETE_DATABASE);
+            // Service will be stopped internally when delete flag is set
+            context.startService(magnetoSrv);
+            magnetoSrv = null;
+        }
+    }
+
     /**
      * Start Proximity module
      */
@@ -3166,6 +3389,16 @@ public class Aware extends Service {
         if (context == null) return;
         if (proximitySrv != null) {
             context.stopService(proximitySrv);
+            proximitySrv = null;
+        }
+    }
+
+    public static void stopProximity(Context context, boolean deleteDb) {
+        if (context == null) return;
+        if (proximitySrv != null && deleteDb) {
+            proximitySrv.setAction(ACTION_AWARE_DELETE_DATABASE);
+            // Service will be stopped internally when delete flag is set
+            context.startService(proximitySrv);
             proximitySrv = null;
         }
     }
@@ -3192,6 +3425,16 @@ public class Aware extends Service {
         }
     }
 
+    public static void stopLight(Context context, boolean deleteDb) {
+        if (context == null) return;
+        if (lightSrv != null && deleteDb) {
+            lightSrv.setAction(ACTION_AWARE_DELETE_DATABASE);
+            // Service will be stopped internally when delete flag is set
+            context.startService(lightSrv);
+            lightSrv = null;
+        }
+    }
+
     /**
      * Start Rotation module
      */
@@ -3210,6 +3453,16 @@ public class Aware extends Service {
         if (context == null) return;
         if (rotationSrv != null) {
             context.stopService(rotationSrv);
+            rotationSrv = null;
+        }
+    }
+
+    public static void stopRotation(Context context, boolean deleteDb) {
+        if (context == null) return;
+        if (rotationSrv != null && deleteDb) {
+            rotationSrv.setAction(ACTION_AWARE_DELETE_DATABASE);
+            // Service will be stopped internally when delete flag is set
+            context.startService(rotationSrv);
             rotationSrv = null;
         }
     }
@@ -3236,6 +3489,16 @@ public class Aware extends Service {
         }
     }
 
+    public static void stopTelephony(Context context, boolean deleteDb) {
+        if (context == null) return;
+        if (telephonySrv != null && deleteDb) {
+            telephonySrv.setAction(ACTION_AWARE_DELETE_DATABASE);
+            // Service will be stopped internally when delete flag is set
+            context.startService(telephonySrv);
+            telephonySrv = null;
+        }
+    }
+
     /**
      * Start the WiFi module
      */
@@ -3251,6 +3514,16 @@ public class Aware extends Service {
         if (context == null) return;
         if (wifiSrv != null) {
             context.stopService(wifiSrv);
+            wifiSrv = null;
+        }
+    }
+
+    public static void stopWiFi(Context context, boolean deleteDb) {
+        if (context == null) return;
+        if (wifiSrv != null && deleteDb) {
+            wifiSrv.setAction(ACTION_AWARE_DELETE_DATABASE);
+            // Service will be stopped internally when delete flag is set
+            context.startService(wifiSrv);
             wifiSrv = null;
         }
     }
@@ -3277,6 +3550,16 @@ public class Aware extends Service {
         }
     }
 
+    public static void stopGyroscope(Context context, boolean deleteDb) {
+        if (context == null) return;
+        if (gyroSrv != null && deleteDb) {
+            gyroSrv.setAction(ACTION_AWARE_DELETE_DATABASE);
+            // Service will be stopped internally when delete flag is set
+            context.startService(gyroSrv);
+            gyroSrv = null;
+        }
+    }
+
     /**
      * Start the accelerometer module
      */
@@ -3299,6 +3582,16 @@ public class Aware extends Service {
         }
     }
 
+    public static void stopAccelerometer(Context context, boolean deleteDb) {
+        if (context == null) return;
+        if (accelerometerSrv != null && deleteDb) {
+            accelerometerSrv.setAction(ACTION_AWARE_DELETE_DATABASE);
+            // Service will be stopped internally when delete flag is set
+            context.startService(accelerometerSrv);
+            accelerometerSrv = null;
+        }
+    }
+
     /**
      * Start the Processor module
      */
@@ -3317,6 +3610,16 @@ public class Aware extends Service {
         if (context == null) return;
         if (processorSrv != null) {
             context.stopService(processorSrv);
+            processorSrv = null;
+        }
+    }
+
+    public static void stopProcessor(Context context, boolean deleteDb) {
+        if (context == null) return;
+        if (processorSrv != null && deleteDb) {
+            processorSrv.setAction(ACTION_AWARE_DELETE_DATABASE);
+            // Service will be stopped internally when delete flag is set
+            context.startService(processorSrv);
             processorSrv = null;
         }
     }
@@ -3347,6 +3650,20 @@ public class Aware extends Service {
         }
     }
 
+    public static void stopLocations(Context context, boolean deleteDb) {
+        if (context == null) return;
+        if (!Aware.getSetting(context, Aware_Preferences.STATUS_LOCATION_GPS).equals("true")
+                && !Aware.getSetting(context, Aware_Preferences.STATUS_LOCATION_NETWORK).equals("true")
+                && !Aware.getSetting(context, Aware_Preferences.STATUS_LOCATION_PASSIVE).equals("true")) {
+            if (locationsSrv != null && deleteDb) {
+                locationsSrv.setAction(ACTION_AWARE_DELETE_DATABASE);
+                // Service will be stopped internally when delete flag is set
+                context.startService(locationsSrv);
+                locationsSrv = null;
+            }
+        }
+    }
+
     /**
      * Start the bluetooth module
      */
@@ -3365,6 +3682,16 @@ public class Aware extends Service {
         if (context == null) return;
         if (bluetoothSrv != null) {
             context.stopService(bluetoothSrv);
+            bluetoothSrv = null;
+        }
+    }
+
+    public static void stopBluetooth(Context context, boolean deleteDb) {
+        if (context == null) return;
+        if (bluetoothSrv != null && deleteDb) {
+            bluetoothSrv.setAction(ACTION_AWARE_DELETE_DATABASE);
+            // Service will be stopped internally when delete flag is set
+            context.startService(bluetoothSrv);
             bluetoothSrv = null;
         }
     }
@@ -3391,6 +3718,16 @@ public class Aware extends Service {
         }
     }
 
+    public static void stopScreen(Context context, boolean deleteDb) {
+        if (context == null) return;
+        if (screenSrv != null && deleteDb) {
+            screenSrv.setAction(ACTION_AWARE_DELETE_DATABASE);
+            // Service will be stopped internally when delete flag is set
+            context.startService(screenSrv);
+            screenSrv = null;
+        }
+    }
+
     /**
      * Start battery module
      */
@@ -3409,6 +3746,16 @@ public class Aware extends Service {
         if (context == null) return;
         if (batterySrv != null) {
             context.stopService(batterySrv);
+            batterySrv = null;
+        }
+    }
+
+    public static void stopBattery(Context context, boolean deleteDb) {
+        if (context == null) return;
+        if (batterySrv != null && deleteDb) {
+            batterySrv.setAction(ACTION_AWARE_DELETE_DATABASE);
+            // Service will be stopped internally when delete flag is set
+            context.startService(batterySrv);
             batterySrv = null;
         }
     }
@@ -3435,6 +3782,16 @@ public class Aware extends Service {
         }
     }
 
+    public static void stopNetwork(Context context, boolean deleteDb) {
+        if (context == null) return;
+        if (networkSrv != null && deleteDb) {
+            networkSrv.setAction(ACTION_AWARE_DELETE_DATABASE);
+            // Service will be stopped internally when delete flag is set
+            context.startService(networkSrv);
+            networkSrv = null;
+        }
+    }
+
     /**
      * Start traffic module
      */
@@ -3457,6 +3814,16 @@ public class Aware extends Service {
         }
     }
 
+    public static void stopTraffic(Context context, boolean deleteDb) {
+        if (context == null) return;
+        if (trafficSrv != null && deleteDb) {
+            trafficSrv.setAction(ACTION_AWARE_DELETE_DATABASE);
+            // Service will be stopped internally when delete flag is set
+            context.startService(trafficSrv);
+            trafficSrv = null;
+        }
+    }
+
     /**
      * Start the Timezone module
      */
@@ -3475,6 +3842,16 @@ public class Aware extends Service {
         if (context == null) return;
         if (timeZoneSrv != null) {
             context.stopService(timeZoneSrv);
+            timeZoneSrv = null;
+        }
+    }
+
+    public static void stopTimeZone(Context context, boolean deleteDb) {
+        if (context == null) return;
+        if (timeZoneSrv != null && deleteDb) {
+            timeZoneSrv.setAction(ACTION_AWARE_DELETE_DATABASE);
+            // Service will be stopped internally when delete flag is set
+            context.startService(timeZoneSrv);
             timeZoneSrv = null;
         }
     }
@@ -3505,6 +3882,16 @@ public class Aware extends Service {
         }
     }
 
+    public static void stopCommunication(Context context, boolean deleteDb) {
+        if (context == null) return;
+        if (communicationSrv != null && deleteDb) {
+            communicationSrv.setAction(ACTION_AWARE_DELETE_DATABASE);
+            // Service will be stopped internally when delete flag is set
+            context.startService(communicationSrv);
+            communicationSrv = null;
+        }
+    }
+
     /**
      * Start MQTT module
      */
@@ -3524,6 +3911,49 @@ public class Aware extends Service {
         if (mqttSrv != null) {
             context.stopService(mqttSrv);
             mqttSrv = null;
+        }
+    }
+
+    public static void stopMQTT(Context context, boolean deleteDb) {
+        if (context == null) return;
+        if (mqttSrv != null && deleteDb) {
+            mqttSrv.setAction(ACTION_AWARE_DELETE_DATABASE);
+            // Service will be stopped internally when delete flag is set
+            context.startService(mqttSrv);
+            mqttSrv = null;
+        }
+    }
+
+    /**
+     * Start application usage module
+     * @param context
+     */
+    public static void startApplicationUsage(Context context) {
+        if (context == null) return;
+        if (applicationUsageSrv == null) {
+            applicationUsageSrv = new Intent(context, ApplicationUsage.class);
+        }
+        context.startService(applicationUsageSrv);
+    }
+
+    /**
+     * Stop application usage module
+     */
+    public static void stopApplicationUsage(Context context) {
+        if (context == null) return;
+        if (applicationUsageSrv != null) {
+            context.stopService(applicationUsageSrv);
+            applicationUsageSrv = null;
+        }
+    }
+
+    public static void stopApplicationUsage(Context context, boolean deleteDb) {
+        if (context == null) return;
+        if (applicationUsageSrv != null && deleteDb) {
+            applicationUsageSrv.setAction(ACTION_AWARE_DELETE_DATABASE);
+            // Service will be stopped internally when delete flag is set
+            context.startService(applicationUsageSrv);
+            applicationUsageSrv = null;
         }
     }
 

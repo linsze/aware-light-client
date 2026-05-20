@@ -103,6 +103,11 @@ public class Aware_Preferences {
     public static final String STATUS_CRASHES = "status_crashes";
 
     /**
+     * Usage events without needing accessibility to be enabled
+     */
+    public static final String STATUS_APPLICATION_USAGE = "status_application_usage";
+
+    /**
      * Activate/deactivate battery log (boolean)
      */
     public static final String STATUS_BATTERY = "status_battery";
@@ -794,6 +799,11 @@ public class Aware_Preferences {
      * Store list of permissions to be checked if they have been updated after redirecting from local permissions.
      */
     public static final String REDIRECTED_PERMISSIONS = "redirected_permissions";
+
+    /**
+     * Store ESM schedules to allow self-initiated of questionnaire answering.
+     */
+    public static final String ESM_SCHEDULES = "esm_schedules";
 
     /**
      * List of default values for currently used preference frequencies and thresholds.

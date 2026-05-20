@@ -8,6 +8,7 @@ import android.content.SyncRequest;
 import android.content.pm.PackageManager;
 import android.database.SQLException;
 import android.database.sqlite.SQLiteException;
+import android.net.Uri;
 import android.os.Bundle;
 import android.os.IBinder;
 import android.telephony.CellIdentityCdma;
@@ -40,6 +41,7 @@ import com.aware.providers.Telephony_Provider.GSM_Data;
 import com.aware.providers.Telephony_Provider.GSM_Neighbors_Data;
 import com.aware.providers.Telephony_Provider.Telephony_Data;
 import com.aware.utils.Aware_Sensor;
+import com.aware.utils.DatabaseHelper;
 import com.aware.utils.Encrypter;
 
 import java.util.List;
@@ -120,6 +122,11 @@ public class Telephony extends Aware_Sensor {
     public int onStartCommand(Intent intent, int flags, int startId) {
         super.onStartCommand(intent, flags, startId);
 
+        if (shouldDeleteDatabase) {
+            stopSelf();
+            return START_NOT_STICKY;
+        }
+
         if (PERMISSIONS_OK) {
             DEBUG = Aware.getSetting(this, Aware_Preferences.DEBUG_FLAG).equals("true");
             Aware.setSetting(this, Aware_Preferences.STATUS_TELEPHONY, true);
@@ -153,6 +160,10 @@ public class Telephony extends Aware_Sensor {
     @Override
     public void onDestroy() {
         super.onDestroy();
+
+        if (shouldDeleteDatabase) {
+            getContentResolver().delete(Uri.parse("content://" + Telephony_Provider.AUTHORITY + "/" + DatabaseHelper.DROP_TABLE_URI), null, null);
+        }
 
         telephonyManager.listen(telephonyState, PhoneStateListener.LISTEN_NONE);
 

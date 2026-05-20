@@ -17,6 +17,7 @@ import android.util.Log;
 import com.aware.Aware;
 import com.aware.utils.DatabaseHelper;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 
 /**
@@ -224,7 +225,7 @@ public class Telephony_Provider extends ContentProvider {
     private void initialiseDatabase() {
         if (dbHelper == null)
             dbHelper = new DatabaseHelper(getContext(), DATABASE_NAME, null, DATABASE_VERSION, DATABASE_TABLES, TABLES_FIELDS);
-        if (database == null)
+        if (database == null || !dbHelper.isTableExists(database))
             database = dbHelper.getWritableDatabase();
     }
 
@@ -255,6 +256,13 @@ public class Telephony_Provider extends ContentProvider {
             case CDMA:
                 count = database.delete(DATABASE_TABLES[3], selection,
                         selectionArgs);
+                break;
+            case DatabaseHelper.DROP_TABLE_ID:
+                ArrayList<String> deletedTables = dbHelper.dropTable();
+                for (String table: deletedTables) {
+                    Log.i("AWARE", "Deleted " + table + " from local storage");
+                }
+                count = deletedTables.size();;
                 break;
             default:
                 database.endTransaction();
@@ -396,6 +404,8 @@ public class Telephony_Provider extends ContentProvider {
                 CDMA);
         sUriMatcher.addURI(Telephony_Provider.AUTHORITY, DATABASE_TABLES[3]
                 + "/#", CDMA_ID);
+        sUriMatcher.addURI(Telephony_Provider.AUTHORITY, DatabaseHelper.DROP_TABLE_URI,
+                DatabaseHelper.DROP_TABLE_ID);
 
         telephonyMap = new HashMap<String, String>();
         telephonyMap.put(Telephony_Data._ID, Telephony_Data._ID);

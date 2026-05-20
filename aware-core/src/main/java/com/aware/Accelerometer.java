@@ -15,6 +15,7 @@ import android.hardware.Sensor;
 import android.hardware.SensorEvent;
 import android.hardware.SensorEventListener;
 import android.hardware.SensorManager;
+import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.HandlerThread;
@@ -26,6 +27,7 @@ import com.aware.providers.Accelerometer_Provider;
 import com.aware.providers.Accelerometer_Provider.Accelerometer_Data;
 import com.aware.providers.Accelerometer_Provider.Accelerometer_Sensor;
 import com.aware.utils.Aware_Sensor;
+import com.aware.utils.DatabaseHelper;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -241,6 +243,10 @@ public class Accelerometer extends Aware_Sensor implements SensorEventListener {
     public void onDestroy() {
         super.onDestroy();
 
+        if (shouldDeleteDatabase) {
+            getContentResolver().delete(Uri.parse("content://" + Accelerometer_Provider.AUTHORITY + "/" + DatabaseHelper.DROP_TABLE_URI), null, null);
+        }
+
         sensorHandler.removeCallbacksAndMessages(null);
         mSensorManager.unregisterListener(this, mAccelerometer);
         sensorThread.quit();
@@ -261,6 +267,11 @@ public class Accelerometer extends Aware_Sensor implements SensorEventListener {
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         super.onStartCommand(intent, flags, startId);
+
+        if (shouldDeleteDatabase) {
+            stopSelf();
+            return START_NOT_STICKY;
+        }
 
         if (PERMISSIONS_OK) {
             if (mAccelerometer == null) {

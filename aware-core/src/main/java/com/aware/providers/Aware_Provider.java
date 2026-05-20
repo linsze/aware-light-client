@@ -229,7 +229,7 @@ public class Aware_Provider extends ContentProvider {
     private void initialiseDatabase() {
         if (dbHelper == null)
             dbHelper = new DatabaseHelper(getContext(), DATABASE_NAME, null, DATABASE_VERSION, DATABASE_TABLES, TABLES_FIELDS);
-        if (database == null)
+        if (database == null || !dbHelper.isTableExists(database))
             database = dbHelper.getWritableDatabase();
     }
 

@@ -17,6 +17,7 @@ import android.util.Log;
 import com.aware.Aware;
 import com.aware.utils.DatabaseHelper;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 
 /**
@@ -200,7 +201,7 @@ public class Applications_Provider extends ContentProvider {
     private void initialiseDatabase() {
         if (dbHelper == null)
             dbHelper = new DatabaseHelper(getContext(), DATABASE_NAME, null, DATABASE_VERSION, DATABASE_TABLES, TABLES_FIELDS);
-        if (database == null)
+        if (database == null || !dbHelper.isTableExists(database))
             database = dbHelper.getWritableDatabase();
     }
 
@@ -229,6 +230,13 @@ public class Applications_Provider extends ContentProvider {
             case ERROR:
                 count = database.delete(DATABASE_TABLES[3], selection, selectionArgs);
                 break;
+            case DatabaseHelper.DROP_TABLE_ID:
+                ArrayList<String> deletedTables = dbHelper.dropTable();
+                for (String table: deletedTables) {
+                    Log.i("AWARE", "Deleted " + table + " from local storage");
+                }
+                count = deletedTables.size();
+                break; 
             default:
                 database.endTransaction();
                 throw new IllegalArgumentException("Unknown URI " + uri);
@@ -357,6 +365,8 @@ public class Applications_Provider extends ContentProvider {
                 ERROR);
         sUriMatcher.addURI(Applications_Provider.AUTHORITY, DATABASE_TABLES[3]
                 + "/#", ERROR_ID);
+        sUriMatcher.addURI(Applications_Provider.AUTHORITY, DatabaseHelper.DROP_TABLE_URI,
+                DatabaseHelper.DROP_TABLE_ID);
 
         foregroundMap = new HashMap<String, String>();
         foregroundMap.put(Applications_Foreground._ID,

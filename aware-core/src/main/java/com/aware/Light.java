@@ -15,6 +15,7 @@ import android.hardware.Sensor;
 import android.hardware.SensorEvent;
 import android.hardware.SensorEventListener;
 import android.hardware.SensorManager;
+import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.HandlerThread;
@@ -26,6 +27,7 @@ import com.aware.providers.Light_Provider;
 import com.aware.providers.Light_Provider.Light_Data;
 import com.aware.providers.Light_Provider.Light_Sensor;
 import com.aware.utils.Aware_Sensor;
+import com.aware.utils.DatabaseHelper;
 import com.aware.utils.PermissionUtils;
 
 import java.util.ArrayList;
@@ -81,6 +83,14 @@ public class Light extends Aware_Sensor implements SensorEventListener {
 
     private static DataLabel dataLabeler = new DataLabel();
 
+    private boolean sensorWorking = false;
+
+    private Handler retryRegisterListenerHandler;
+
+    private static final int MAX_RETRIES = 3;
+
+    private int retryRegisterCount = 0;
+
     public static class DataLabel extends BroadcastReceiver {
         @Override
         public void onReceive(Context context, Intent intent) {
@@ -106,6 +116,7 @@ public class Light extends Aware_Sensor implements SensorEventListener {
      */
     @Override
     public void onSensorChanged(SensorEvent event) {
+        sensorWorking = true;
         long TS = System.currentTimeMillis();
         if (ENFORCE_FREQUENCY && TS < LAST_TS + FREQUENCY / 1000) {
             return;
@@ -244,6 +255,10 @@ public class Light extends Aware_Sensor implements SensorEventListener {
     public void onDestroy() {
         super.onDestroy();
 
+        if (shouldDeleteDatabase) {
+            getContentResolver().delete(Uri.parse("content://" + Light_Provider.AUTHORITY + "/" + DatabaseHelper.DROP_TABLE_URI), null, null);
+        }
+
         if (mLight != null) {
             sensorHandler.removeCallbacksAndMessages(null);
             mSensorManager.unregisterListener(this, mLight);
@@ -260,6 +275,10 @@ public class Light extends Aware_Sensor implements SensorEventListener {
                     Bundle.EMPTY
             );
         } else {
+            if (retryRegisterListenerHandler != null) {
+                retryRegisterListenerHandler.removeCallbacksAndMessages(null);
+            }
+
             //HACK: Manually disable because light sensor was not found
             Aware.setSetting(getApplicationContext(), Aware_Preferences.STATUS_LIGHT, false);
             Intent sensorIntent = new Intent();
@@ -277,6 +296,11 @@ public class Light extends Aware_Sensor implements SensorEventListener {
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         super.onStartCommand(intent, flags, startId);
+
+        if (shouldDeleteDatabase) {
+            stopSelf();
+            return START_NOT_STICKY;
+        }
 
         if (PERMISSIONS_OK) {
             if (mLight == null) {
@@ -313,6 +337,19 @@ public class Light extends Aware_Sensor implements SensorEventListener {
                 }
 
                 mSensorManager.registerListener(this, mLight, Integer.parseInt(Aware.getSetting(getApplicationContext(), Aware_Preferences.FREQUENCY_LIGHT)), sensorHandler);
+
+                // Register to listener may fail for the first time, check after five minutes and retry up to 3 times if nothing has been received.
+                retryRegisterListenerHandler = new Handler();
+                retryRegisterCount = 0;
+                retryRegisterListenerHandler.postDelayed(() -> {
+                    if (!sensorWorking && retryRegisterCount < MAX_RETRIES) {
+                        retryRegisterCount++;
+                        mSensorManager.unregisterListener(this, mLight);
+                        mSensorManager.registerListener(this, mLight, Integer.parseInt(Aware.getSetting(getApplicationContext(), Aware_Preferences.FREQUENCY_LIGHT)), sensorHandler);
+                    } else if (!sensorWorking) {
+                        Log.e("SensorCheck", "Sensor failed to register after retries.");
+                    }
+                }, 300000);
 
                 if (Aware.isStudy(this)) {
                     ContentResolver.setIsSyncable(Aware.getAWAREAccount(this), Light_Provider.getAuthority(this), 1);

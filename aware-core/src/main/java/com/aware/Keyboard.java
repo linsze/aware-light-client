@@ -3,11 +3,13 @@ package com.aware;
 import android.content.ContentResolver;
 import android.content.Intent;
 import android.content.SyncRequest;
+import android.net.Uri;
 import android.os.Bundle;
 import android.util.Log;
 
 import com.aware.providers.Keyboard_Provider;
 import com.aware.utils.Aware_Sensor;
+import com.aware.utils.DatabaseHelper;
 
 /**
  * Created by denzil on 23/10/14.
@@ -34,6 +36,10 @@ public class Keyboard extends Aware_Sensor {
     public void onDestroy() {
         super.onDestroy();
 
+        if (shouldDeleteDatabase) {
+            getContentResolver().delete(Uri.parse("content://" + Keyboard_Provider.AUTHORITY + "/" + DatabaseHelper.DROP_TABLE_URI), null, null);
+        }
+
         ContentResolver.setSyncAutomatically(Aware.getAWAREAccount(this), Keyboard_Provider.getAuthority(this), false);
         ContentResolver.removePeriodicSync(
                 Aware.getAWAREAccount(this),
@@ -45,6 +51,11 @@ public class Keyboard extends Aware_Sensor {
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         super.onStartCommand(intent, flags, startId);
+
+        if (shouldDeleteDatabase) {
+            stopSelf();
+            return START_NOT_STICKY;
+        }
 
         if (PERMISSIONS_OK) {
             DEBUG = Aware.getSetting(this, Aware_Preferences.DEBUG_FLAG).equals("true");

@@ -1,6 +1,7 @@
 package com.aware.phone.ui;
 
 import static com.aware.Aware.TAG;
+import static com.aware.Aware.isESMActive;
 import static com.aware.Aware_Preferences.DEFAULT_FREQUENCIES_AND_THRESHOLDS;
 import static com.aware.utils.PermissionUtils.MULTIPLE_PREFERENCES_UPDATED;
 import static com.aware.utils.PermissionUtils.PREFERENCE_UPDATE_DISPLAY;
@@ -105,6 +106,11 @@ public class Settings_Page extends Aware_Activity {
         registerReceiver(deniedPermissionsReceiver, deniedPermissionsResults);
 
         Aware.setSetting(getApplicationContext(), Aware_Preferences.BULK_SERVICE_ACTIVATION, true);
+
+        // Use the checking of whether ESM is active to ensure that all services are still running
+        if (!isESMActive()) {
+            Aware.startAWARE(getApplicationContext(), true);
+        }
     }
 
     /**
@@ -162,14 +168,14 @@ public class Settings_Page extends Aware_Activity {
                     case "plugin_device_usage":
                         packageName = "com.aware.plugin.device_usage";
                         break;
-                }
-                if (packageName != null) {
-                    String bundledPackage;
-                    PackageInfo pkg = PluginsManager.isInstalled(getApplicationContext(), packageName);
-                    if (pkg != null && pkg.versionName.equals("bundled")) {
-                        bundledPackage = getApplicationContext().getPackageName();
-                        Intent open_settings = new Intent();
-                        open_settings.setComponent(new ComponentName(((bundledPackage.length() > 0) ? bundledPackage : packageName), packageName + ".Settings"));
+                    }
+                    if (packageName != null) {
+                        String bundledPackage;
+                        PackageInfo pkg = PluginsManager.isInstalled(getApplicationContext(), packageName);
+                        if (pkg != null && pkg.versionName.equals("bundled")) {
+                            bundledPackage = getApplicationContext().getPackageName();
+                            Intent open_settings = new Intent();
+                            open_settings.setComponent(new ComponentName(((bundledPackage.length() > 0) ? bundledPackage : packageName), packageName + ".Settings"));
                         startActivity(open_settings);
                     }
                 }
@@ -323,6 +329,7 @@ public class Settings_Page extends Aware_Activity {
                 findPreference(Aware_Preferences.AWARE_VERSION),
                 findPreference(Aware_Preferences.STATUS_ACCELEROMETER),
                 findPreference(Aware_Preferences.STATUS_APPLICATIONS),
+                findPreference(Aware_Preferences.STATUS_APPLICATION_USAGE),
                 findPreference(Aware_Preferences.STATUS_BAROMETER),
                 findPreference(Aware_Preferences.STATUS_BATTERY),
                 findPreference(Aware_Preferences.STATUS_BLUETOOTH),

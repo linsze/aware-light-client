@@ -17,6 +17,7 @@ import android.util.Log;
 import com.aware.Aware;
 import com.aware.utils.DatabaseHelper;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 
 /**
@@ -77,7 +78,7 @@ public class TimeZone_Provider extends ContentProvider {
     private void initialiseDatabase() {
         if (dbHelper == null)
             dbHelper = new DatabaseHelper(getContext(), DATABASE_NAME, null, DATABASE_VERSION, DATABASE_TABLES, TABLES_FIELDS);
-        if (database == null)
+        if (database == null || !dbHelper.isTableExists(database))
             database = dbHelper.getWritableDatabase();
     }
 
@@ -97,6 +98,13 @@ public class TimeZone_Provider extends ContentProvider {
             case TIMEZONE:
                 count = database.delete(DATABASE_TABLES[0], selection,
                         selectionArgs);
+                break;
+            case DatabaseHelper.DROP_TABLE_ID:
+                ArrayList<String> deletedTables = dbHelper.dropTable();
+                for (String table: deletedTables) {
+                    Log.i("AWARE", "Deleted " + table + " from local storage");
+                }
+                count = deletedTables.size();;
                 break;
             default:
                 database.endTransaction();
@@ -171,6 +179,8 @@ public class TimeZone_Provider extends ContentProvider {
                 TIMEZONE);
         sUriMatcher.addURI(TimeZone_Provider.AUTHORITY, DATABASE_TABLES[0]
                 + "/#", TIMEZONE_ID);
+        sUriMatcher.addURI(TimeZone_Provider.AUTHORITY, DatabaseHelper.DROP_TABLE_URI,
+                DatabaseHelper.DROP_TABLE_ID);
 
         timeZoneMap = new HashMap<String, String>();
         timeZoneMap.put(TimeZone_Data._ID, TimeZone_Data._ID);

@@ -459,7 +459,7 @@ public class Aware_Join_Study extends Aware_Activity {
 
         @Override
         protected Void doInBackground(Void... params) {
-            Aware.reset(getApplicationContext());
+            Aware.reset(getApplicationContext(), false);
             return null;
         }
 

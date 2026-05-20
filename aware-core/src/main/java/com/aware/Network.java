@@ -14,6 +14,7 @@ import android.database.sqlite.SQLiteException;
 import android.location.LocationManager;
 import android.net.ConnectivityManager;
 import android.net.NetworkInfo;
+import android.net.Uri;
 import android.net.wifi.WifiManager;
 import android.os.Bundle;
 import android.os.IBinder;
@@ -25,6 +26,7 @@ import android.util.Log;
 import com.aware.providers.Network_Provider;
 import com.aware.providers.Network_Provider.Network_Data;
 import com.aware.utils.Aware_Sensor;
+import com.aware.utils.DatabaseHelper;
 
 /**
  * Network context
@@ -566,6 +568,10 @@ public class Network extends Aware_Sensor {
     public void onDestroy() {
         super.onDestroy();
 
+        if (shouldDeleteDatabase) {
+            getContentResolver().delete(Uri.parse("content://" + Network_Provider.AUTHORITY + "/" + DatabaseHelper.DROP_TABLE_URI), null, null);
+        }
+
         unregisterReceiver(networkMonitor);
         teleManager.listen(phoneListener, PhoneStateListener.LISTEN_NONE);
 
@@ -582,6 +588,11 @@ public class Network extends Aware_Sensor {
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         super.onStartCommand(intent, flags, startId);
+
+        if (shouldDeleteDatabase) {
+            stopSelf();
+            return START_NOT_STICKY;
+        }
 
         if (PERMISSIONS_OK) {
             DEBUG = Aware.getSetting(this, Aware_Preferences.DEBUG_FLAG).equals("true");

@@ -12,6 +12,7 @@ import android.view.ViewGroup;
 import android.view.WindowManager;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.EditText;
+import android.widget.SeekBar;
 import android.widget.TextView;
 import androidx.annotation.NonNull;
 import com.aware.Aware;
@@ -26,7 +27,7 @@ import org.json.JSONObject;
  * Created by NBerkel on 23/08/16.
  */
 public class ESM_Number extends ESM_Question {
-    private static EditText numberInput;
+    private EditText numberInput;
 
     public ESM_Number() throws JSONException {
         this.setType(ESM.TYPE_ESM_NUMBER);
@@ -46,7 +47,14 @@ public class ESM_Number extends ESM_Question {
     @Override
     public void onViewCreated(@NonNull View view, Bundle savedInstanceState) {
         super.onViewCreated(view, savedInstanceState);
+
         try {
+            TextView esm_date = (TextView) view.findViewById(R.id.esm_date);
+            String esm_date_string = this.getDateString();
+            if (!esm_date_string.equals("")) {
+                esm_date.setText("On " + esm_date_string + ":");
+            }
+
             TextView esm_title = (TextView) view.findViewById(R.id.esm_title);
             esm_title.setText(getTitle());
             esm_title.setMovementMethod(ScrollingMovementMethod.getInstance());
@@ -56,11 +64,6 @@ public class ESM_Number extends ESM_Question {
             esm_instructions.setMovementMethod(ScrollingMovementMethod.getInstance());
 
             numberInput = (EditText) view.findViewById(R.id.esm_feedback);
-
-            String savedNumber = (String) sharedViewModel.getStoredData(getID());
-            if (savedNumber != null) {
-                numberInput.setText(savedNumber);
-            }
 
             numberInput.setOnClickListener(new View.OnClickListener() {
                 @Override
@@ -73,40 +76,48 @@ public class ESM_Number extends ESM_Question {
                     }
                 }
             });
-//            getActivity().getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE);
-//            numberInput.post(() -> {
-//                InputMethodManager imm = (InputMethodManager) getActivity().getSystemService(Context.INPUT_METHOD_SERVICE);
-//                if (imm != null) {
-//                    imm.showSoftInput(numberInput, InputMethodManager.SHOW_IMPLICIT);
-//                }
-//            });
         } catch (JSONException e) {
             e.printStackTrace();
         }
+
+        // Observe changes on ViewModel and reflect them on input
+        sharedViewModel.getStoredData(getID()).observe(getViewLifecycleOwner(), value -> {
+            if (value != null) {
+                String savedNumber = (String) value;
+                numberInput.setText(savedNumber);
+            }
+        });
     }
 
     @Override
     public void saveData() {
-        sharedViewModel.storeData(getID(), numberInput.getText().toString());
+        if (isAdded()) {
+            sharedViewModel.storeData(getID(), numberInput.getText().toString());
 
-        ContentValues rowData = new ContentValues();
-        rowData.put(ESM_Provider.ESM_Data.ANSWER_TIMESTAMP, System.currentTimeMillis());
-        rowData.put(ESM_Provider.ESM_Data.ANSWER, numberInput.getText().toString());
-        rowData.put(ESM_Provider.ESM_Data.STATUS, ESM.STATUS_ANSWERED);
+            ContentValues rowData = new ContentValues();
+            rowData.put(ESM_Provider.ESM_Data.ANSWER_TIMESTAMP, System.currentTimeMillis());
+            rowData.put(ESM_Provider.ESM_Data.ANSWER, numberInput.getText().toString());
+            rowData.put(ESM_Provider.ESM_Data.STATUS, ESM.STATUS_ANSWERED);
 
-        getActivity().getContentResolver().update(ESM_Provider.ESM_Data.CONTENT_URI, rowData, ESM_Provider.ESM_Data._ID + "=" + getID(), null);
+            if (getActivity() != null) {
+                getActivity().getApplicationContext().getContentResolver().update(ESM_Provider.ESM_Data.CONTENT_URI, rowData, ESM_Provider.ESM_Data._ID + "=" + getID(), null);
+            } else {
+                requireContext().getContentResolver().update(ESM_Provider.ESM_Data.CONTENT_URI, rowData, ESM_Provider.ESM_Data._ID + "=" + getID(), null);
+            }
 
-        Intent answer = new Intent(ESM.ACTION_AWARE_ESM_ANSWERED);
-        JSONObject esmJSON = getEsm();
-        try {
-            esmJSON = esmJSON.put(ESM_Provider.ESM_Data._ID, getID());
-        } catch (JSONException e) {
-            throw new RuntimeException(e);
+            Intent answer = new Intent(ESM.ACTION_AWARE_ESM_ANSWERED);
+            JSONObject esmJSON = getEsm();
+            try {
+                esmJSON = esmJSON.put(ESM_Provider.ESM_Data._ID, getID());
+                answer.putExtra(ESM.EXTRA_ESM, esmJSON.toString());
+                answer.putExtra(ESM.EXTRA_ANSWER, rowData.getAsString(ESM_Provider.ESM_Data.ANSWER));
+                answer.putExtra(ESM.EXTRA_DATE, getDate());
+                getActivity().sendBroadcast(answer);
+            } catch (JSONException e) {
+                throw new RuntimeException(e);
+            }
+
+            if (Aware.DEBUG) Log.d(Aware.TAG, "Answer:" + rowData.toString());
         }
-        answer.putExtra(ESM.EXTRA_ESM, esmJSON.toString());
-        answer.putExtra(ESM.EXTRA_ANSWER, rowData.getAsString(ESM_Provider.ESM_Data.ANSWER));
-        getActivity().sendBroadcast(answer);
-
-        if (Aware.DEBUG) Log.d(Aware.TAG, "Answer:" + rowData.toString());
     }
 }

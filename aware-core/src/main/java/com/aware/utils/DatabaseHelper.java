@@ -45,6 +45,10 @@ public class DatabaseHelper extends SQLiteOpenHelper {
 
     private HashMap<String, String> renamed_columns = new HashMap<>();
 
+    public static final String DROP_TABLE_URI = "drop";
+
+    public static final int DROP_TABLE_ID = 100;
+
     public DatabaseHelper(Context context, String database_name, CursorFactory cursor_factory, int database_version, String[] database_tables, String[] table_fields) {
         super(context, database_name, cursor_factory, database_version);
         mContext = context;
@@ -166,7 +170,7 @@ public class DatabaseHelper extends SQLiteOpenHelper {
     @Override
     public synchronized SQLiteDatabase getWritableDatabase() {
         try {
-            if (database != null) {
+            if (database != null && isTableExists(database)) {
                 if (!database.isOpen()) {
                     database = null;
                 } else if (!database.isReadOnly()) {
@@ -195,6 +199,21 @@ public class DatabaseHelper extends SQLiteOpenHelper {
         } catch (Exception e) {
             return null;
         }
+    }
+
+    public boolean isTableExists(SQLiteDatabase db) {
+        boolean allTablesExist = true;
+        for (String tableName: databaseTables) {
+            Cursor cursor = db.rawQuery(
+                    "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+                    new String[]{tableName}
+            );
+            if (cursor.getCount() == 0) {
+                allTablesExist = false;
+            }
+            cursor.close();
+        }
+        return allTablesExist;
     }
 
     @Override
@@ -241,7 +260,20 @@ public class DatabaseHelper extends SQLiteOpenHelper {
                 aware_folder.mkdirs();
             }
 
-            database = SQLiteDatabase.openOrCreateDatabase(new File(aware_folder, this.databaseName).getPath(), this.cursorFactory);
+            File dbFile = new File(aware_folder, this.databaseName);
+            boolean databaseExists = dbFile.exists();
+
+            database = SQLiteDatabase.openOrCreateDatabase(dbFile.getPath(), this.cursorFactory);
+            database.beginTransaction(); // Start transaction to prevent race conditions
+            try {
+                if (!databaseExists || !isTableExists(database)) {
+                    Log.d("Database", "Database or table is missing, calling onCreate()");
+                    onCreate(database);
+                }
+                database.setTransactionSuccessful();
+            } finally {
+                database.endTransaction();
+            }
             return database;
         } catch (SQLiteException e) {
             return null;
@@ -257,5 +289,19 @@ public class DatabaseHelper extends SQLiteOpenHelper {
                 || Build.MANUFACTURER.contains("Genymotion")
                 || (Build.BRAND.startsWith("generic") && Build.DEVICE.startsWith("generic"))
                 || "google_sdk".equals(Build.PRODUCT);
+    }
+
+    /**
+     * Deletes all current database tables.
+     * @return count of deleted table
+     */
+    public ArrayList<String> dropTable() {
+        ArrayList<String> deletedTables = new ArrayList<>();
+        SQLiteDatabase db = this.getWritableDatabase();
+        for (String databaseTable : this.databaseTables) {
+            db.execSQL("DROP TABLE IF EXISTS " + databaseTable);
+            deletedTables.add(databaseTable);
+        }
+        return deletedTables;
     }
 }
